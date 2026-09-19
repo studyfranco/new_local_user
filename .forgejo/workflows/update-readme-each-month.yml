@@ -1,0 +1,43 @@
+on:
+  schedule:
+    - cron: '0 1 15 * *'
+  workflow_dispatch:
+
+jobs:
+  update-last-update:
+    runs-on: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        branch: [ "master", "audio", "video" ]
+
+    steps:
+      - name: Checkout target branch
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ matrix.branch }}
+
+      - name: Set up git identity
+        run: |
+          git config user.name "Francois STUDER"
+          git config user.email "31127324+studyfranco@users.noreply.github.com"
+
+      - name: Update Last Update date in README
+        run: |
+          TODAY=$(date -u +'%Y-%m-%d')
+          awk -v today="$TODAY" '
+            /^## Last Update/ { print; getline; print today; next }
+            { print }
+          ' README.md > README.tmp && mv README.tmp README.md
+
+      - name: Commit and push changes if needed
+        run: |
+          TODAY=$(date -u +'%Y-%m-%d')
+          git add README.md
+          if ! git diff --staged --quiet; then
+            git commit -m "chore: monthly Last Update set to $TODAY"
+            git push origin ${{ matrix.branch }}
+          else
+            echo "Aucune modification détectée."
+          fi
