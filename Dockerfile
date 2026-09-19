@@ -57,3 +57,10 @@ ENV PGID="1000" \
     PYTHONPYCACHEPREFIX=/tmp/pycache
 
 ENTRYPOINT [ "/init.sh" ]
+
+RUN set -x \
+    && apt update \
+    && DEBIAN_FRONTEND=noninteractive apt install -y atomicparsley --no-install-recommends \
+    && python3 -m pip install --break-system-packages mnamer \
+    && apt clean autoclean -y \
+    && rm -rf /var/cache/* /var/lib/apt/lists/* /var/log/* /var/tmp/* /tmp/* /root/.cache
