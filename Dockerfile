@@ -52,6 +52,7 @@ RUN chmod +x /init.sh \
 
 ENV PGID="1000" \
     PUID="1000" \
+    remote_name="claude_code" \
     XDG_CACHE_HOME=/tmp/.cache \
     CARGO_HOME=/tmp/cargo \
     PYTHONPYCACHEPREFIX=/tmp/pycache
