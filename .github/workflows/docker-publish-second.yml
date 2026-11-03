@@ -24,7 +24,7 @@ jobs:
       fail-fast: false
       max-parallel: 2
       matrix:
-        branch: [ "audio","video"]
+        branch: [ "audio","video","antigravity-audio","antigravity-video"]
     runs-on: ubuntu-latest
     permissions:
       contents: read

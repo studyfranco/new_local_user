@@ -7,11 +7,11 @@ name: Docker
 
 on:
   push:
-    branches: [ "master","audio","video"]
+    branches: [ "master","audio","video","antigravity","antigravity-audio","antigravity-video"]
     # Publish semver tags as releases.
     tags: [ 'v*.*.*' ]
   pull_request:
-    branches: [ "master","audio","video"]
+    branches: [ "master","audio","video","antigravity","antigravity-audio","antigravity-video"]
 
 env:
   # Use docker.io for Docker Hub if empty
@@ -26,7 +26,7 @@ jobs:
       fail-fast: false
       max-parallel: 1
       matrix:
-        branch: [ "master"]
+        branch: [ "master","antigravity"]
     runs-on: ubuntu-latest
     permissions:
       contents: read
