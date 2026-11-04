@@ -2,6 +2,8 @@ FROM ghcr.io/studyfranco/docker-baseimages-debian:testing-video
 
 LABEL maintainer="studyfranco@gmail.com"
 
+USER root
+
 RUN set -x \
     && apt update \
     && apt dist-upgrade -y \
@@ -11,7 +13,7 @@ RUN set -x \
 
 RUN set -x \
     && apt update \
-    && DEBIAN_FRONTEND=noninteractive apt-get install -y build-essential netcat-openbsd lsof procps jq rsync zip 7zip pkg-config openssl --no-install-recommends --fix-missing \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y build-essential netcat-openbsd lsof procps jq rsync zip 7zip pkg-config openssl ca-certificates curl --no-install-recommends --fix-missing \
     && apt autopurge -yy \
     && apt clean \
     && rm -rf /var/cache/* /var/lib/apt/lists/* /var/log/* /var/tmp/* /tmp/*
@@ -30,31 +32,40 @@ RUN set -x \
     && apt clean autoclean -y \
     && rm -rf /var/cache/* /var/lib/apt/lists/* /var/log/* /var/tmp/* /tmp/* /root/.cache
 
-RUN install -d -m 0755 /etc/apt/keyrings \
-    && set -x \
-    && curl -fsSL https://downloads.claude.ai/keys/claude-code.asc -o /etc/apt/keyrings/claude-code.asc \
-    && echo "deb [signed-by=/etc/apt/keyrings/claude-code.asc] https://downloads.claude.ai/claude-code/apt/stable stable main" | tee /etc/apt/sources.list.d/claude-code.list \
-    && apt update \
-    && DEBIAN_FRONTEND=noninteractive apt-get install -y claude-code --no-install-recommends --fix-missing \
-    && apt autopurge -yy \
-    && apt clean \
-    && rm -rf /var/cache/* /var/lib/apt/lists/* /var/log/* /var/tmp/* /tmp/*
-
 RUN set -x \
-    && useradd -ms /bin/bash thenewuser \
+    && groupadd -g 1000 thenewuser \
+    && useradd -u 1000 -g 1000 -ms /bin/bash thenewuser \
+    && install -d -m 0755 -o thenewuser -g thenewuser \
+        /config \
+        /home/thenewuser/.config \
+        /home/thenewuser/.local/bin \
+        /home/thenewuser/.local/share \
+        /home/thenewuser/.local/state \
     && gosu nobody true
 
-COPY init.sh /
-COPY --chown=thenewuser:thenewuser run.sh run-claude.sh /home/thenewuser/
-RUN chmod +x /init.sh \
-    && chmod +x /home/thenewuser/run.sh \
-    && chmod +x /home/thenewuser/run-claude.sh
+COPY init.sh /init.sh
+COPY --chown=thenewuser:thenewuser run.sh /usr/local/bin/run.sh
+COPY --chown=thenewuser:thenewuser run.sh /home/thenewuser/run.sh
+RUN chmod 0755 /init.sh /usr/local/bin/run.sh /home/thenewuser/run.sh
 
 ENV PGID="1000" \
     PUID="1000" \
-    remote_name="claude_code" \
-    XDG_CACHE_HOME=/tmp/.cache \
-    CARGO_HOME=/tmp/cargo \
-    PYTHONPYCACHEPREFIX=/tmp/pycache
+    HOME="/home/thenewuser" \
+    USER="thenewuser" \
+    PATH="/home/thenewuser/.local/bin:/usr/local/bin:/usr/bin:/bin" \
+    TMPDIR="/tmp" \
+    TMUX_TMPDIR="/tmp" \
+    XDG_RUNTIME_DIR="/tmp/runtime-thenewuser" \
+    XDG_CACHE_HOME="/tmp/.cache" \
+    XDG_CONFIG_HOME="/home/thenewuser/.config" \
+    XDG_DATA_HOME="/home/thenewuser/.local/share" \
+    XDG_STATE_HOME="/home/thenewuser/.local/state" \
+    CARGO_HOME="/tmp/cargo" \
+    PYTHONPYCACHEPREFIX="/tmp/pycache" \
+    PIP_CACHE_DIR="/tmp/.cache/pip" \
+    NPM_CONFIG_CACHE="/tmp/.cache/npm"
+
+USER thenewuser
+WORKDIR /tmp
 
 ENTRYPOINT [ "/init.sh" ]

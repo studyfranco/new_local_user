@@ -10,7 +10,20 @@ jobs:
       fail-fast: false
       max-parallel: 1
       matrix:
-        branch: [ "master", "audio", "video", "antigravity", "antigravity-audio", "antigravity-video" ]
+        branch:
+          - "master"
+          - "claude"
+          - "claude-audio"
+          - "claude-video"
+          - "antigravity"
+          - "antigravity-audio"
+          - "antigravity-video"
+          - "goose"
+          - "goose-audio"
+          - "goose-video"
+          - "codex"
+          - "codex-audio"
+          - "codex-video"
 
     steps:
       - name: Checkout target branch
