@@ -1,22 +1,19 @@
-# new_local_user — Layer 2 : Claude Code CLI (`claude`)
+# new_local_user — Layer 3 : Claude Code CLI + Audio (`claude-audio`)
 
-Image Docker pour **Claude Code CLI** (`ghcr.io/studyfranco/new_local_user:claude`), basée sur `ghcr.io/studyfranco/new_local_user:master`. Conçue pour être **100 % rootless** (`1000:1000`) et **read-only ready** (`read_only: true`).
+Image Docker **Claude Code CLI + gestion de bibliothèque musicale** (`ghcr.io/studyfranco/new_local_user:claude-audio`), basée sur `ghcr.io/studyfranco/new_local_user:claude`. Conçue pour être **100 % rootless** (`1000:1000`) et **read-only ready** (`read_only: true`).
 
-## Fonctionnalités & Authentification à distance
-- **Agent CLI** : Anthropic Claude Code (`claude`)
-- **Mode autonome & Remote Control** : Lancé automatiquement par `/usr/local/bin/run.sh` (hérité de `master`) via `/usr/local/bin/start-cli.sh` (`run-claude.sh`) dans une session `tmux` (`the_new_user`) avec `--dangerously-skip-permissions --remote-control "${remote_name}"` et reprise automatique (`--continue`).
-- **Tokens d'authentification headless / remote** :
-  - `CLAUDE_CODE_OAUTH_TOKEN` : Token OAuth d'abonnement Claude (généré via `claude setup-token`).
-  - `ANTHROPIC_API_KEY` (ou `ANTHROPIC_AUTH_TOKEN`) : Clé API Anthropic directe.
-- **Configuration persistante** : Stockée dans `CLAUDE_CONFIG_DIR=/home/thenewuser/.claude`
+## Outils Audio & Authentification à distance
+- **Outils Audio** : `beets`, `picard` (`xvfb`), `shntool`, `flac`, `wavpack`, `fdupes`, `dos2unix`, `recode`, `coreutils`
+- **Agent CLI** : Anthropic Claude Code (`claude`) avec `--remote-control` (hérité du layer 2 `claude`)
+- **Tokens d'authentification headless / remote** : `CLAUDE_CODE_OAUTH_TOKEN` (via `claude setup-token`) ou `ANTHROPIC_API_KEY`
 
 ## Exemple `docker-compose.yml` (Rootless & Read-Only)
 
 ```yaml
 services:
-  claude:
-    image: ghcr.io/studyfranco/new_local_user:claude
-    container_name: claude_cli
+  claude-audio:
+    image: ghcr.io/studyfranco/new_local_user:claude-audio
+    container_name: claude_audio
     restart: unless-stopped
     user: "1000:1000"
     read_only: true
@@ -25,21 +22,22 @@ services:
     cap_drop:
       - ALL
     environment:
-      - remote_name=claude_code
+      - remote_name=claude_audio
       - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN:-}
       # - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
     tmpfs:
       - /tmp:exec,mode=1777
     volumes:
       - ./data/claude:/home/thenewuser/.claude
-      - /srv:/srv
+      - ./data/config:/home/thenewuser/.config
+      - /srv/music:/srv/music
       - /mnt:/mnt
 ```
 
 ## Utilisation
 Rejoindre la session `tmux` de Claude :
 ```bash
-docker exec -it claude_cli tmux attach -t the_new_user
+docker exec -it claude_audio tmux attach -t the_new_user
 ```
 
 ## Last Update
