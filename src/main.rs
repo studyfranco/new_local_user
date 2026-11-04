@@ -126,17 +126,7 @@ async fn main() {
         http_client,
     });
 
-    let app = Router::new()
-        .route("/", get(serve_index))
-        .route("/style.css", get(serve_css))
-        .route("/app.js", get(serve_js))
-        .route("/healthz", get(serve_healthz))
-        .route("/api/config", get(serve_config))
-        .route("/api/status", get(serve_status))
-        .route("/ws/codex", get(ws_codex_handler))
-        .route("/ws/goose", get(ws_goose_handler))
-        .route("/api/goose/*path", any(proxy_goose_http))
-        .with_state(state);
+    let app = build_router(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     info!("Agent Hub listening on http://{} (plain HTTP behind Traefik)", addr);
@@ -147,6 +137,20 @@ async fn main() {
     axum::serve(listener, app)
         .await
         .expect("Server terminated unexpectedly");
+}
+
+fn build_router(state: Arc<AppState>) -> Router {
+    Router::new()
+        .route("/", get(serve_index))
+        .route("/style.css", get(serve_css))
+        .route("/app.js", get(serve_js))
+        .route("/healthz", get(serve_healthz))
+        .route("/api/config", get(serve_config))
+        .route("/api/status", get(serve_status))
+        .route("/ws/codex", get(ws_codex_handler))
+        .route("/ws/goose", get(ws_goose_handler))
+        .route("/api/goose/*path", any(proxy_goose_http))
+        .with_state(state)
 }
 
 async fn serve_index() -> Html<&'static str> {
@@ -559,3 +563,308 @@ async fn bridge_ws_to_unix(client_ws: WebSocket, unix_stream: UnixStream) {
         _ = unix_to_client => {},
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::Value;
+    use tokio::net::{TcpListener, UnixListener};
+
+    #[tokio::test]
+    async fn test_end_to_end_agent_hub_bridges_and_api() {
+        // 1. Spawn Mock Goose Server (validating X-Secret-Key on both HTTP POST /acp and WS /acp)
+        let goose_app = Router::new().route(
+            "/acp",
+            get(|headers: HeaderMap, ws: WebSocketUpgrade| async move {
+                let key = headers
+                    .get("x-secret-key")
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("");
+                assert_eq!(key, "test-goose-secret-123", "Goose WS must receive X-Secret-Key");
+                ws.on_upgrade(|mut socket| async move {
+                    while let Some(Ok(AxumWsMessage::Text(text))) = socket.next().await {
+                        let req: Value = serde_json::from_str(&text).unwrap();
+                        let id = req.get("id").cloned().unwrap_or(json!(1));
+                        let method = req.get("method").and_then(|m| m.as_str()).unwrap_or("");
+                        match method {
+                            "initialize" => {
+                                let reply = json!({
+                                    "jsonrpc": "2.0",
+                                    "id": id,
+                                    "result": { "protocolVersion": 1, "agentInfo": { "name": "goose-mock" } }
+                                });
+                                socket.send(AxumWsMessage::Text(reply.to_string())).await.unwrap();
+                            }
+                            "session/new" => {
+                                let reply = json!({
+                                    "jsonrpc": "2.0",
+                                    "id": id,
+                                    "result": { "sessionId": "goose-sess-42" }
+                                });
+                                socket.send(AxumWsMessage::Text(reply.to_string())).await.unwrap();
+                            }
+                            "session/prompt" => {
+                                let chunk = json!({
+                                    "jsonrpc": "2.0",
+                                    "method": "session/update",
+                                    "params": {
+                                        "sessionId": "goose-sess-42",
+                                        "update": {
+                                            "sessionUpdate": "agent_message_chunk",
+                                            "content": { "type": "text", "text": "Bonjour depuis Goose ACP!" }
+                                        }
+                                    }
+                                });
+                                socket.send(AxumWsMessage::Text(chunk.to_string())).await.unwrap();
+                                let reply = json!({
+                                    "jsonrpc": "2.0",
+                                    "id": id,
+                                    "result": { "stopReason": "end_turn" }
+                                });
+                                socket.send(AxumWsMessage::Text(reply.to_string())).await.unwrap();
+                            }
+                            _ => {}
+                        }
+                    }
+                })
+            })
+            .post(|headers: HeaderMap, Json(req): Json<Value>| async move {
+                let key = headers
+                    .get("x-secret-key")
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("");
+                assert_eq!(key, "test-goose-secret-123", "Goose HTTP must receive X-Secret-Key");
+                let id = req.get("id").cloned().unwrap_or(json!(1));
+                Json(json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "result": { "protocolVersion": 1, "httpProxy": "ok" }
+                }))
+            }),
+        );
+
+        let goose_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let goose_addr = goose_listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(goose_listener, goose_app).await.unwrap();
+        });
+
+        // 2. Spawn Mock Codex WebSocket Server (ws://127.0.0.1:<port>)
+        let codex_ws_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let codex_ws_addr = codex_ws_listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            while let Ok((stream, _)) = codex_ws_listener.accept().await {
+                tokio::spawn(async move {
+                    let Ok(mut ws) = tokio_tungstenite::accept_async(stream).await else {
+                        return;
+                    };
+                    while let Some(Ok(TungMessage::Text(text))) = ws.next().await {
+                        let req: Value = serde_json::from_str(&text).unwrap();
+                        let method = req.get("method").and_then(|m| m.as_str()).unwrap_or("");
+                        if let Some(id) = req.get("id").cloned() {
+                            match method {
+                                "initialize" => {
+                                    let reply = json!({
+                                        "jsonrpc": "2.0",
+                                        "id": id,
+                                        "result": { "serverInfo": { "name": "codex-ws-mock" } }
+                                    });
+                                    ws.send(TungMessage::Text(reply.to_string())).await.unwrap();
+                                }
+                                "thread/start" => {
+                                    let reply = json!({
+                                        "jsonrpc": "2.0",
+                                        "id": id,
+                                        "result": { "thread": { "id": "thread-ws-99" } }
+                                    });
+                                    ws.send(TungMessage::Text(reply.to_string())).await.unwrap();
+                                }
+                                "turn/start" => {
+                                    let delta = json!({
+                                        "jsonrpc": "2.0",
+                                        "method": "item/agentMessage/delta",
+                                        "params": { "delta": "Réponse Codex WebSocket!" }
+                                    });
+                                    ws.send(TungMessage::Text(delta.to_string())).await.unwrap();
+                                    let reply = json!({
+                                        "jsonrpc": "2.0",
+                                        "id": id,
+                                        "result": { "turn": { "id": "turn-1", "status": "completed" } }
+                                    });
+                                    ws.send(TungMessage::Text(reply.to_string())).await.unwrap();
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                });
+            }
+        });
+
+        // 3. Spawn Mock Codex Unix Socket Server (/tmp/test-codex-hub.sock)
+        let sock_path = format!("/tmp/test-codex-hub-{}.sock", std::process::id());
+        let _ = std::fs::remove_file(&sock_path);
+        let unix_listener = UnixListener::bind(&sock_path).unwrap();
+        let sock_path_clone = sock_path.clone();
+        tokio::spawn(async move {
+            while let Ok((stream, _)) = unix_listener.accept().await {
+                tokio::spawn(async move {
+                    let (read_half, mut write_half) = stream.into_split();
+                    let mut lines = BufReader::new(read_half).lines();
+                    while let Ok(Some(line)) = lines.next_line().await {
+                        let req: Value = serde_json::from_str(&line).unwrap();
+                        if let Some(id) = req.get("id").cloned() {
+                            let reply = json!({
+                                "jsonrpc": "2.0",
+                                "id": id,
+                                "result": { "data": [{ "id": "thread-unix-1", "preview": "Unix Socket Thread" }] }
+                            });
+                            let mut out = reply.to_string();
+                            out.push('\n');
+                            write_half.write_all(out.as_bytes()).await.unwrap();
+                        }
+                    }
+                });
+            }
+        });
+
+        // 4. Spawn Agent Hub Server pointing to the 3 mock backends
+        let state = Arc::new(AppState {
+            goose_http_url: format!("http://{}", goose_addr),
+            goose_ws_url: format!("ws://{}/acp", goose_addr),
+            goose_secret: Some("test-goose-secret-123".to_string()),
+            codex_ws_url: format!("ws://{}", codex_ws_addr),
+            codex_unix_socket: sock_path.clone(),
+            default_cwd: "/srv".to_string(),
+            http_client: reqwest::Client::new(),
+        });
+
+        let hub_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let hub_addr = hub_listener.local_addr().unwrap();
+        let hub_app = build_router(state);
+        tokio::spawn(async move {
+            axum::serve(hub_listener, hub_app).await.unwrap();
+        });
+
+        let client = reqwest::Client::new();
+        let base_http = format!("http://{}", hub_addr);
+        let base_ws = format!("ws://{}", hub_addr);
+
+        // 5a. Test Static Assets & Healthz
+        let index_res = client.get(format!("{}/", base_http)).send().await.unwrap();
+        assert_eq!(index_res.status(), 200);
+        let index_body = index_res.text().await.unwrap();
+        assert!(index_body.contains("Agent Hub"));
+
+        let js_res = client.get(format!("{}/app.js", base_http)).send().await.unwrap();
+        assert_eq!(js_res.status(), 200);
+
+        let health_res: Value = client
+            .get(format!("{}/healthz", base_http))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(health_res["status"], "ok");
+
+        // 5b. Test /api/config & /api/status
+        let cfg_res: Value = client
+            .get(format!("{}/api/config", base_http))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(cfg_res["has_goose_secret"], true);
+        assert_eq!(cfg_res["codex_unix_available"], true);
+
+        let status_res: Value = client
+            .get(format!("{}/api/status", base_http))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(status_res["goose"]["online"], true);
+        assert_eq!(status_res["codex_ws"]["online"], true);
+        assert_eq!(status_res["codex_unix"]["online"], true);
+
+        // 5c. Test Goose HTTP Proxy (/api/goose/acp)
+        let goose_http_res: Value = client
+            .post(format!("{}/api/goose/acp", base_http))
+            .json(&json!({ "jsonrpc": "2.0", "id": 10, "method": "initialize", "params": {} }))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(goose_http_res["result"]["httpProxy"], "ok");
+
+        // 5d. Test Goose WebSocket Bridge (/ws/goose)
+        let (mut goose_ws, _) = connect_async(format!("{}/ws/goose", base_ws)).await.unwrap();
+        goose_ws
+            .send(TungMessage::Text(
+                json!({ "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {} }).to_string(),
+            ))
+            .await
+            .unwrap();
+        let init_msg = goose_ws.next().await.unwrap().unwrap().into_text().unwrap();
+        let init_val: Value = serde_json::from_str(&init_msg).unwrap();
+        assert_eq!(init_val["result"]["agentInfo"]["name"], "goose-mock");
+
+        goose_ws
+            .send(TungMessage::Text(
+                json!({ "jsonrpc": "2.0", "id": 2, "method": "session/prompt", "params": {} }).to_string(),
+            ))
+            .await
+            .unwrap();
+        let chunk_msg = goose_ws.next().await.unwrap().unwrap().into_text().unwrap();
+        let chunk_val: Value = serde_json::from_str(&chunk_msg).unwrap();
+        assert_eq!(
+            chunk_val["params"]["update"]["content"]["text"],
+            "Bonjour depuis Goose ACP!"
+        );
+
+        // 5e. Test Codex WebSocket Bridge (/ws/codex?mode=ws)
+        let (mut codex_ws, _) = connect_async(format!("{}/ws/codex?mode=ws", base_ws))
+            .await
+            .unwrap();
+        codex_ws
+            .send(TungMessage::Text(
+                json!({ "jsonrpc": "2.0", "id": 1, "method": "turn/start", "params": {} }).to_string(),
+            ))
+            .await
+            .unwrap();
+        let delta_msg = codex_ws.next().await.unwrap().unwrap().into_text().unwrap();
+        let delta_val: Value = serde_json::from_str(&delta_msg).unwrap();
+        assert_eq!(delta_val["params"]["delta"], "Réponse Codex WebSocket!");
+
+        // 5f. Test Codex Unix Socket Bridge (/ws/codex?mode=unix)
+        let (mut codex_unix_ws, _) = connect_async(format!("{}/ws/codex?mode=unix", base_ws))
+            .await
+            .unwrap();
+        codex_unix_ws
+            .send(TungMessage::Text(
+                json!({ "jsonrpc": "2.0", "id": 77, "method": "thread/list", "params": {} }).to_string(),
+            ))
+            .await
+            .unwrap();
+        let unix_msg = codex_unix_ws
+            .next()
+            .await
+            .unwrap()
+            .unwrap()
+            .into_text()
+            .unwrap();
+        let unix_val: Value = serde_json::from_str(&unix_msg).unwrap();
+        assert_eq!(unix_val["result"]["data"][0]["id"], "thread-unix-1");
+
+        let _ = std::fs::remove_file(&sock_path_clone);
+    }
+}
+
