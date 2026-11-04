@@ -7,15 +7,20 @@ on:
       - "claude"
       - "claude-audio"
       - "claude-video"
+      - "claude-dev"
       - "antigravity"
       - "antigravity-audio"
       - "antigravity-video"
+      - "antigravity-dev"
       - "goose"
       - "goose-audio"
       - "goose-video"
+      - "goose-dev"
       - "codex"
       - "codex-audio"
       - "codex-video"
+      - "codex-dev"
+      - "web"
     tags: [ 'v*.*.*' ]
   pull_request:
     branches:
@@ -23,15 +28,20 @@ on:
       - "claude"
       - "claude-audio"
       - "claude-video"
+      - "claude-dev"
       - "antigravity"
       - "antigravity-audio"
       - "antigravity-video"
+      - "antigravity-dev"
       - "goose"
       - "goose-audio"
       - "goose-video"
+      - "goose-dev"
       - "codex"
       - "codex-audio"
       - "codex-video"
+      - "codex-dev"
+      - "web"
 
 env:
   REGISTRY: ghcr.io

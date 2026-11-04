@@ -13,7 +13,7 @@ RUN set -x \
 
 RUN set -x \
     && apt update \
-    && DEBIAN_FRONTEND=noninteractive apt-get install -y build-essential netcat-openbsd lsof procps jq rsync zip 7zip pkg-config openssl ca-certificates curl --no-install-recommends --fix-missing \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y build-essential netcat-openbsd lsof procps jq rsync zip 7zip pkg-config openssl ca-certificates curl git --no-install-recommends --fix-missing \
     && apt autopurge -yy \
     && apt clean \
     && rm -rf /var/cache/* /var/lib/apt/lists/* /var/log/* /var/tmp/* /tmp/*
@@ -40,17 +40,12 @@ RUN set -x \
         /home/thenewuser/.config \
         /home/thenewuser/.local/bin \
         /home/thenewuser/.local/share \
-        /home/thenewuser/.local/state \
-    && gosu nobody true
+        /home/thenewuser/.local/state
 
-COPY init.sh /init.sh
 COPY --chown=thenewuser:thenewuser run.sh /usr/local/bin/run.sh
-COPY --chown=thenewuser:thenewuser run.sh /home/thenewuser/run.sh
-RUN chmod 0755 /init.sh /usr/local/bin/run.sh /home/thenewuser/run.sh
+RUN chmod 0755 /usr/local/bin/run.sh
 
-ENV PGID="1000" \
-    PUID="1000" \
-    HOME="/home/thenewuser" \
+ENV HOME="/home/thenewuser" \
     USER="thenewuser" \
     PATH="/home/thenewuser/.local/bin:/usr/local/bin:/usr/bin:/bin" \
     TMPDIR="/tmp" \
@@ -68,4 +63,4 @@ ENV PGID="1000" \
 USER thenewuser
 WORKDIR /tmp
 
-ENTRYPOINT [ "/init.sh" ]
+ENTRYPOINT [ "/usr/local/bin/run.sh" ]

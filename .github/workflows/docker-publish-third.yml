@@ -20,12 +20,16 @@ jobs:
         branch:
           - "claude-audio"
           - "claude-video"
+          - "claude-dev"
           - "antigravity-audio"
           - "antigravity-video"
+          - "antigravity-dev"
           - "goose-audio"
           - "goose-video"
+          - "goose-dev"
           - "codex-audio"
           - "codex-video"
+          - "codex-dev"
     runs-on: ubuntu-latest
     permissions:
       contents: read

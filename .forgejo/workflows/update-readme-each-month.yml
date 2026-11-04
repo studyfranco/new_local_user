@@ -15,15 +15,20 @@ jobs:
           - "claude"
           - "claude-audio"
           - "claude-video"
+          - "claude-dev"
           - "antigravity"
           - "antigravity-audio"
           - "antigravity-video"
+          - "antigravity-dev"
           - "goose"
           - "goose-audio"
           - "goose-video"
+          - "goose-dev"
           - "codex"
           - "codex-audio"
           - "codex-video"
+          - "codex-dev"
+          - "web"
 
     steps:
       - name: Checkout target branch
