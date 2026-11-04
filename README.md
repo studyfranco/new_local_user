@@ -1,49 +1,23 @@
-# new_local_user — Layer 1 : Base Généraliste (`master`)
+# new_local_user — Layer 2 : OpenAI Codex CLI (`codex`)
 
-Image Docker de base généraliste (`ghcr.io/studyfranco/new_local_user:master`), conçue pour être **100 % rootless** (`USER thenewuser` `1000:1000`, sans `init.sh` ni `gosu`/`chown`) et **read-only ready** (`read_only: true`).
+Image Docker pour **OpenAI Codex CLI (`codex`)** (`ghcr.io/studyfranco/new_local_user:codex`), basée sur `ghcr.io/studyfranco/new_local_user:master`. Conçue pour être **100 % rootless** (`1000:1000`) et **read-only ready** (`read_only: true`).
 
-## Architecture en 3 Layers (18 branches)
+## Fonctionnalités & Serveur `codex app-server`
+- **Agent CLI** : OpenAI Codex CLI (`codex`) installé via le script officiel (`https://chatgpt.com/codex/install.sh`) dans `/opt/codex` et `/usr/local/bin/codex`
+- **Mode autonome** : Lancé automatiquement par `/usr/local/bin/run.sh` (hérité de `master`) via `/usr/local/bin/start-cli.sh` (`run-codex.sh`) dans une session `tmux` (`the_new_user`) avec `--dangerously-bypass-approvals-and-sandbox` et reprise automatique (`codex resume --last`).
+- **Serveur distant `codex app-server`** :
+  - Démarre `codex app-server --listen unix:///run/codex/app.sock` (pour partager les sessions avec l'interface Web de la branche `web`) et `codex app-server --listen ws://0.0.0.0:4500` (pour `codex --remote ws://...`).
+- **Tokens d'authentification headless / remote** :
+  - `OPENAI_API_KEY` ou `CODEX_API_KEY` : Importé automatiquement via `printenv ... | codex login --with-api-key`.
+  - **Device Auth (`--device-auth`)** : Si aucun token n'est défini, exécute `codex login --device-auth`.
 
-```text
-Layer 1 (Base généraliste)
-└── master (contient uniquement run.sh)
-    ├── Layer 2 (Agents CLI & Web UI — ajoutent uniquement leur start-cli.sh)
-    │   ├── claude        (Anthropic Claude Code CLI)
-    │   │   ├── claude-audio
-    │   │   ├── claude-video
-    │   │   └── claude-dev
-    │   ├── antigravity   (Google Antigravity CLI - agy)
-    │   │   ├── antigravity-audio
-    │   │   ├── antigravity-video
-    │   │   └── antigravity-dev
-    │   ├── goose         (AAIF / Block Goose CLI + goose serve ACP)
-    │   │   ├── goose-audio
-    │   │   ├── goose-video
-    │   │   └── goose-dev
-    │   ├── codex         (OpenAI Codex CLI + codex app-server)
-    │   │   ├── codex-audio
-    │   │   ├── codex-video
-    │   │   └── codex-dev
-    │   └── web           (Interfaces Web ACP-UI & Codex-Web pour se connecter à goose serve / codex app-server)
-```
-
-## Outils inclus dans `master`
-- **Base** : `ghcr.io/studyfranco/docker-baseimages-debian:testing-video`
-- **Système & Réseau** : `build-essential`, `netcat-openbsd`, `lsof`, `procps`, `jq`, `rsync`, `zip`, `7zip`, `pkg-config`, `openssl`, `curl`, `git`, `strace`, `tmux`
-- **Python** : `python3-venv`, `python3-pip`, `py-spy`
-- **Utilisateur non-root** : `thenewuser` (`UID=1000`, `GID=1000`)
-
-## Conception Rootless & Read-Only (`read_only: true`)
-- **Aucun `init.sh` root** : L'`ENTRYPOINT` est directement `/usr/local/bin/run.sh` exécuté sous `USER thenewuser` (`1000:1000`). Compatible avec Docker Rootless, Podman Rootless, `user: "1000:1000"`, `cap_drop: [ALL]` et `no-new-privileges:true`.
-- **Héritage propre des scripts** : `run.sh` dans `master` lance `/usr/local/bin/start-cli.sh` s'il est fourni par un Layer 2 (sinon `/bin/bash`). Les branches filles ne redéfinissent jamais les scripts des couches parentes.
-
-## Exemple `docker-compose.yml`
+## Exemple `docker-compose.yml` (Rootless & Read-Only)
 
 ```yaml
 services:
-  base-shell:
-    image: ghcr.io/studyfranco/new_local_user:master
-    container_name: new_local_user_base
+  codex:
+    image: ghcr.io/studyfranco/new_local_user:codex
+    container_name: codex_cli
     restart: unless-stopped
     user: "1000:1000"
     read_only: true
@@ -51,18 +25,25 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    ports:
+      - "4500:4500"
+    environment:
+      - CODEX_HOME=/home/thenewuser/.codex
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      # - CODEX_API_KEY=${CODEX_API_KEY:-}
     tmpfs:
       - /tmp:exec,mode=1777
     volumes:
-      - ./data/home:/home/thenewuser
+      - ./data/codex:/home/thenewuser/.codex
+      - ./data/codex-run:/run/codex
       - /srv:/srv
       - /mnt:/mnt
 ```
 
 ## Utilisation
-Rejoindre la session `tmux` active :
+Rejoindre la session `tmux` de Codex :
 ```bash
-docker exec -it new_local_user_base tmux attach -t the_new_user
+docker exec -it codex_cli tmux attach -t the_new_user
 ```
 
 ## Last Update
