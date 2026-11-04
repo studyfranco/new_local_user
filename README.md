@@ -1,49 +1,23 @@
-# new_local_user — Layer 1 : Base Généraliste (`master`)
+# new_local_user — Layer 2 : Hub Web UI (`web`) pour `goose serve` & `codex app-server`
 
-Image Docker de base généraliste (`ghcr.io/studyfranco/new_local_user:master`), conçue pour être **100 % rootless** (`USER thenewuser` `1000:1000`, sans `init.sh` ni `gosu`/`chown`) et **read-only ready** (`read_only: true`).
+Image Docker **Web UI Hub** (`ghcr.io/studyfranco/new_local_user:web`), basée sur `ghcr.io/studyfranco/new_local_user:master`. Conçue pour être **100 % rootless** (`1000:1000`) et **read-only ready** (`read_only: true`).
 
-## Architecture en 3 Layers (18 branches)
+Contrairement à Claude (`claude --remote-control`) et Antigravity (`agy --remote-control`) qui disposent déjà de leur propre tableau de bord cloud officiel, **Goose** (`goose serve`) et **Codex** (`codex app-server`) exposent des serveurs locaux/réseau. Ce conteneur fournit les deux interfaces Web open-source permettant de s'y connecter :
 
-```text
-Layer 1 (Base généraliste)
-└── master (contient uniquement run.sh)
-    ├── Layer 2 (Agents CLI & Web UI — ajoutent uniquement leur start-cli.sh)
-    │   ├── claude        (Anthropic Claude Code CLI)
-    │   │   ├── claude-audio
-    │   │   ├── claude-video
-    │   │   └── claude-dev
-    │   ├── antigravity   (Google Antigravity CLI - agy)
-    │   │   ├── antigravity-audio
-    │   │   ├── antigravity-video
-    │   │   └── antigravity-dev
-    │   ├── goose         (AAIF / Block Goose CLI + goose serve ACP)
-    │   │   ├── goose-audio
-    │   │   ├── goose-video
-    │   │   └── goose-dev
-    │   ├── codex         (OpenAI Codex CLI + codex app-server)
-    │   │   ├── codex-audio
-    │   │   ├── codex-video
-    │   │   └── codex-dev
-    │   └── web           (Interfaces Web ACP-UI & Codex-Web pour se connecter à goose serve / codex app-server)
-```
+1. **ACP-UI (`formulahendry/acp-ui`) — Port `3000`** :
+   - Client Web pour le protocole **ACP (Agent Client Protocol)**.
+   - Permet de se connecter en WebSocket à **`goose serve`** (`ws://<ip-ou-host>:3284/acp?token=<GOOSE_SERVER__SECRET_KEY>`) ou tout autre agent compatible ACP.
+2. **Codex-Web (`sjtrny/codex-web`) — Port `8000`** :
+   - Interface Web dédiée à **`codex app-server`**.
+   - Se connecte au socket partagé `/run/codex/app.sock` du conteneur `codex` (et partage les conversations en temps réel avec le terminal `tmux` de `codex`).
 
-## Outils inclus dans `master`
-- **Base** : `ghcr.io/studyfranco/docker-baseimages-debian:testing-video`
-- **Système & Réseau** : `build-essential`, `netcat-openbsd`, `lsof`, `procps`, `jq`, `rsync`, `zip`, `7zip`, `pkg-config`, `openssl`, `curl`, `git`, `strace`, `tmux`
-- **Python** : `python3-venv`, `python3-pip`, `py-spy`
-- **Utilisateur non-root** : `thenewuser` (`UID=1000`, `GID=1000`)
-
-## Conception Rootless & Read-Only (`read_only: true`)
-- **Aucun `init.sh` root** : L'`ENTRYPOINT` est directement `/usr/local/bin/run.sh` exécuté sous `USER thenewuser` (`1000:1000`). Compatible avec Docker Rootless, Podman Rootless, `user: "1000:1000"`, `cap_drop: [ALL]` et `no-new-privileges:true`.
-- **Héritage propre des scripts** : `run.sh` dans `master` lance `/usr/local/bin/start-cli.sh` s'il est fourni par un Layer 2 (sinon `/bin/bash`). Les branches filles ne redéfinissent jamais les scripts des couches parentes.
-
-## Exemple `docker-compose.yml`
+## Exemple `docker-compose.yml` complet (`web` + `goose` + `codex` en Rootless & Read-Only)
 
 ```yaml
 services:
-  base-shell:
-    image: ghcr.io/studyfranco/new_local_user:master
-    container_name: new_local_user_base
+  web:
+    image: ghcr.io/studyfranco/new_local_user:web
+    container_name: agents_web_ui
     restart: unless-stopped
     user: "1000:1000"
     read_only: true
@@ -51,19 +25,72 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    ports:
+      - "3000:3000" # ACP-UI (pour Goose serve / ACP)
+      - "8000:8000" # Codex-Web (pour Codex app-server)
+    environment:
+      - ACP_UI_PORT=3000
+      - CODEX_RUNTIME_DIR=/run/codex
+      - CODEX_WORKSPACE_ROOT=/srv
+      - CODEX_DEFAULT_CWD=/srv
     tmpfs:
       - /tmp:exec,mode=1777
     volumes:
-      - ./data/home:/home/thenewuser
+      - ./data/codex-run:/run/codex:ro
+      - /srv:/srv:ro
+
+  goose:
+    image: ghcr.io/studyfranco/new_local_user:goose
+    container_name: goose_cli
+    restart: unless-stopped
+    user: "1000:1000"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    ports:
+      - "3284:3284"
+    environment:
+      - GOOSE_MODE=auto
+      - GOOSE_PROVIDER=${GOOSE_PROVIDER:-openai}
+      - GOOSE_MODEL=${GOOSE_MODEL:-gpt-4o}
+      - GOOSE_PROVIDER__API_KEY=${GOOSE_PROVIDER__API_KEY:-}
+      - GOOSE_SERVER__SECRET_KEY=${GOOSE_SERVER__SECRET_KEY:-change_me_secret_token}
+    tmpfs:
+      - /tmp:exec,mode=1777
+    volumes:
+      - ./data/goose/config:/home/thenewuser/.config/goose
+      - ./data/goose/share:/home/thenewuser/.local/share/goose
+      - ./data/goose/state:/home/thenewuser/.local/state/goose
       - /srv:/srv
-      - /mnt:/mnt
+
+  codex:
+    image: ghcr.io/studyfranco/new_local_user:codex
+    container_name: codex_cli
+    restart: unless-stopped
+    user: "1000:1000"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    ports:
+      - "4500:4500"
+    environment:
+      - CODEX_HOME=/home/thenewuser/.codex
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    tmpfs:
+      - /tmp:exec,mode=1777
+    volumes:
+      - ./data/codex:/home/thenewuser/.codex
+      - ./data/codex-run:/run/codex
+      - /srv:/srv
 ```
 
 ## Utilisation
-Rejoindre la session `tmux` active :
-```bash
-docker exec -it new_local_user_base tmux attach -t the_new_user
-```
+- **Interface Web Goose / ACP** : ouvrir `http://localhost:3000` et renseigner `ws://<host>:3284/acp?token=<GOOSE_SERVER__SECRET_KEY>`
+- **Interface Web Codex** : ouvrir `http://localhost:8000`
 
 ## Last Update
 2026-11-04
