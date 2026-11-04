@@ -1,17 +1,18 @@
 #!/bin/bash
+set -e
 
-mkdir -p "${CODEX_UPLOAD_DIR:-/tmp/uploads}" /tmp/codex-run 2>/dev/null || true
+export PORT="${PORT:-8080}"
+export GOOSE_HTTP_URL="${GOOSE_HTTP_URL:-http://goose:3284}"
+export GOOSE_WS_URL="${GOOSE_WS_URL:-ws://goose:3284/acp}"
+export CODEX_WS_URL="${CODEX_WS_URL:-ws://codex:4500}"
+export CODEX_UNIX_SOCKET="${CODEX_UNIX_SOCKET:-/run/codex/app.sock}"
+export DEFAULT_CWD="${DEFAULT_CWD:-/srv}"
 
-# Optional: bridge a remote TCP/WS codex container to a local Unix socket if CODEX_REMOTE_TCP is set (e.g. codex_cli:4500)
-if [[ -n "${CODEX_REMOTE_TCP:-}" ]]; then
-    export CODEX_RUNTIME_DIR="/tmp/codex-run"
-    rm -f /tmp/codex-run/app.sock
-    socat UNIX-LISTEN:/tmp/codex-run/app.sock,fork TCP:"${CODEX_REMOTE_TCP}" >/tmp/socat-codex.log 2>&1 &
-fi
+echo "=================================================================="
+echo " Agent Hub (Rust API + Native JS UI) démarré sur 0.0.0.0:${PORT}"
+echo " -> Prêt derrière un reverse-proxy Traefik (HTTP)"
+echo " -> Cible Goose : ${GOOSE_WS_URL} (${GOOSE_HTTP_URL})"
+echo " -> Cible Codex : ${CODEX_WS_URL} (ou socket ${CODEX_UNIX_SOCKET})"
+echo "=================================================================="
 
-# 1. Start ACP-UI Web Server (connects to Goose `goose serve` ACP & ACP WebSocket agents) on port 3000
-python3 -m http.server "${ACP_UI_PORT:-3000}" --bind 0.0.0.0 --directory /opt/acp-ui/dist-web >/tmp/acp-ui.log 2>&1 &
-
-# 2. Start Codex-Web UI (connects to `codex app-server` via /run/codex/app.sock) on port 8000
-cd /opt/codex-web
-exec python3 /opt/codex-web/app.py
+exec /usr/local/bin/agent-hub

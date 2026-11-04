@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Agent Hub — Goose &amp; Codex Remote UI</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="app-layout">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-logo">⚡</div>
+        <div>
+          <h1>Agent Hub</h1>
+          <span class="brand-sub">Rust API &bull; Native JS</span>
+        </div>
+      </div>
+
+      <!-- Agent Switcher -->
+      <div class="section-label">Moteur CLI distant</div>
+      <div class="agent-tabs">
+        <button id="tab-codex" class="agent-tab active" data-agent="codex">
+          <span class="status-dot" id="dot-codex"></span>
+          <div class="tab-info">
+            <strong>Codex</strong>
+            <small>app-server JSON-RPC</small>
+          </div>
+        </button>
+        <button id="tab-goose" class="agent-tab" data-agent="goose">
+          <span class="status-dot" id="dot-goose"></span>
+          <div class="tab-info">
+            <strong>Goose</strong>
+            <small>goose serve ACP</small>
+          </div>
+        </button>
+      </div>
+
+      <!-- Connection Configuration Panel -->
+      <div class="config-card">
+        <div class="config-header">
+          <span id="config-title">Connexion Codex</span>
+          <button id="btn-probe" class="btn-icon" title="Vérifier l'état des conteneurs">↻</button>
+        </div>
+
+        <!-- Codex Controls -->
+        <div id="controls-codex" class="agent-controls">
+          <label class="field-label">Transport</label>
+          <select id="codex-mode" class="input-field">
+            <option value="ws">WebSocket (ws://codex:4500)</option>
+            <option value="unix">Socket Unix (/run/codex/app.sock)</option>
+          </select>
+
+          <label class="field-label">Cible (optionnel)</label>
+          <input id="codex-target" type="text" class="input-field" placeholder="ws://codex:4500" />
+
+          <label class="field-label">Répertoire de travail (cwd)</label>
+          <input id="codex-cwd" type="text" class="input-field" value="/srv" />
+
+          <div class="btn-row">
+            <button id="btn-codex-connect" class="btn btn-primary">Connecter</button>
+            <button id="btn-codex-new" class="btn btn-secondary">+ Thread</button>
+          </div>
+        </div>
+
+        <!-- Goose Controls -->
+        <div id="controls-goose" class="agent-controls hidden">
+          <label class="field-label">Mode ACP</label>
+          <select id="goose-mode" class="input-field">
+            <option value="ws">WebSocket (/ws/goose &rarr; /acp)</option>
+            <option value="http">HTTP JSON-RPC (/api/goose/acp)</option>
+          </select>
+
+          <label class="field-label">URL Goose (optionnel)</label>
+          <input id="goose-target" type="text" class="input-field" placeholder="ws://goose:3284/acp" />
+
+          <label class="field-label">Clé secrète (si non définie côté serveur)</label>
+          <input id="goose-token" type="password" class="input-field" placeholder="GOOSE_SERVER__SECRET_KEY" />
+
+          <label class="field-label">Répertoire de travail (cwd)</label>
+          <input id="goose-cwd" type="text" class="input-field" value="/srv" />
+
+          <div class="btn-row">
+            <button id="btn-goose-connect" class="btn btn-primary">Connecter</button>
+            <button id="btn-goose-new" class="btn btn-secondary">+ Session</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sessions / Threads List -->
+      <div class="sessions-header">
+        <span class="section-label" id="sessions-label">Threads Codex</span>
+        <button id="btn-refresh-sessions" class="btn-icon" title="Rafraîchir la liste">⟳</button>
+      </div>
+      <div id="session-list" class="session-list">
+        <div class="empty-hint">Aucun thread actif</div>
+      </div>
+
+      <div class="sidebar-footer">
+        <button id="btn-toggle-rpc" class="btn btn-ghost">Inspecteur JSON-RPC</button>
+      </div>
+    </aside>
+
+    <!-- Main Chat Area -->
+    <main class="main-area">
+      <header class="topbar">
+        <div class="topbar-left">
+          <span class="badge" id="conn-badge">Déconnecté</span>
+          <span class="active-session-id" id="active-session-display">Aucune session sélectionnée</span>
+        </div>
+        <div class="topbar-right">
+          <button id="btn-interrupt" class="btn btn-danger hidden">⏹ Interrompre</button>
+          <button id="btn-clear-chat" class="btn btn-ghost">Effacer l'écran</button>
+        </div>
+      </header>
+
+      <div id="messages-container" class="messages-container">
+        <div class="welcome-card">
+          <h2>Bienvenue sur Agent Hub</h2>
+          <p>Interface Web unifiée (Backend Rust + JS Natif) pour piloter vos conteneurs <strong>Codex</strong> (<code>codex app-server</code>) et <strong>Goose</strong> (<code>goose serve</code>) derrière Traefik.</p>
+          <div class="welcome-steps">
+            <div class="step-item">
+              <strong>1. Choisissez l'agent</strong>
+              <span>Sélectionnez <em>Codex</em> ou <em>Goose</em> dans la barre latérale.</span>
+            </div>
+            <div class="step-item">
+              <strong>2. Connectez le flux</strong>
+              <span>Cliquez sur <em>Connecter</em> pour établir le pont WebSocket / Unix Socket via le serveur Rust.</span>
+            </div>
+            <div class="step-item">
+              <strong>3. Lancez vos instructions</strong>
+              <span>Créez un Thread/Session et interagissez en temps réel avec validation des outils.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pending Approval Banner -->
+      <div id="approval-banner" class="approval-banner hidden">
+        <div class="approval-info">
+          <strong>Demande d'autorisation d'outil</strong>
+          <pre id="approval-details"></pre>
+        </div>
+        <div class="approval-actions">
+          <button id="btn-approve" class="btn btn-success">Autoriser</button>
+          <button id="btn-decline" class="btn btn-danger">Refuser</button>
+        </div>
+      </div>
+
+      <!-- Prompt Composer -->
+      <form id="prompt-form" class="composer">
+        <textarea
+          id="prompt-input"
+          rows="2"
+          placeholder="Écrivez votre instruction pour l'agent... (Entrée pour envoyer, Shift+Entrée pour nouvelle ligne)"
+        ></textarea>
+        <button type="submit" id="btn-send" class="btn btn-send">Envoyer ➤</button>
+      </form>
+
+      <!-- Raw JSON-RPC Inspector Drawer -->
+      <section id="rpc-drawer" class="rpc-drawer hidden">
+        <div class="rpc-header">
+          <strong>Flux JSON-RPC 2.0 en direct</strong>
+          <div class="rpc-actions">
+            <button id="btn-clear-rpc" class="btn-small">Vider</button>
+            <button id="btn-close-rpc" class="btn-small">✕</button>
+          </div>
+        </div>
+        <div id="rpc-log" class="rpc-log"></div>
+        <form id="rpc-custom-form" class="rpc-custom-form">
+          <input id="rpc-custom-input" type="text" placeholder='Envoyer une trame JSON-RPC brute, ex: {"jsonrpc":"2.0","id":99,"method":"thread/list","params":{}}' />
+          <button type="submit" class="btn-small">Envoyer JSON</button>
+        </form>
+      </section>
+    </main>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

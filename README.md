@@ -1,96 +1,135 @@
-# new_local_user — Layer 2 : Hub Web UI (`web`) pour `goose serve` & `codex app-server`
+# new_local_user — Branche `web` (Layer 2 : Agent Hub — Rust API + Native JS Web UI)
 
-Image Docker **Web UI Hub** (`ghcr.io/studyfranco/new_local_user:web`), basée sur `ghcr.io/studyfranco/new_local_user:master`. Conçue pour être **100 % rootless** (`1000:1000`) et **read-only ready** (`read_only: true`).
+Cette image héberge **Agent Hub** (`/usr/local/bin/agent-hub`), une application Web unifiée développée sur mesure :
+- **Backend en Rust** (`axum`, `tokio`, `tokio-tungstenite`, `reqwest`) servant à la fois l'interface Web statique (embarquée dans le binaire via `include_str!`) et le proxy/pont API & WebSocket temps réel.
+- **Frontend en JavaScript Natif** (sans dépendance lourde externe) permettant de piloter depuis une seule interface :
+  1. **Codex (`codex app-server`)** en JSON-RPC 2.0 via **WebSocket** (`ws://codex:4500`) ou **Socket Unix** partagé (`/run/codex/app.sock`).
+  2. **Goose (`goose serve`)** via le protocole **ACP (Agent Client Protocol)** sur **WebSocket** (`ws://goose:3284/acp`) ou **HTTP JSON-RPC** (`http://goose:3284/acp`) avec injection côté serveur de la clé `X-Secret-Key` (`GOOSE_SERVER__SECRET_KEY`).
+- **Conçu pour Traefik** : écoute en HTTP pur sur `0.0.0.0:8080` (`PORT`), la terminaison TLS/HTTPS étant déléguée au reverse-proxy Traefik.
+- **100% Rootless (`1000:1000`) & Read-Only Ready** : le binaire Rust autonome ne nécessite aucune écriture sur le système de fichiers racine.
 
-Contrairement à Claude (`claude --remote-control`) et Antigravity (`agy --remote-control`) qui disposent déjà de leur propre tableau de bord cloud officiel, **Goose** (`goose serve`) et **Codex** (`codex app-server`) exposent des serveurs locaux/réseau. Ce conteneur fournit les deux interfaces Web open-source permettant de s'y connecter :
+---
 
-1. **ACP-UI (`formulahendry/acp-ui`) — Port `3000`** :
-   - Client Web pour le protocole **ACP (Agent Client Protocol)**.
-   - Permet de se connecter en WebSocket à **`goose serve`** (`ws://<ip-ou-host>:3284/acp?token=<GOOSE_SERVER__SECRET_KEY>`) ou tout autre agent compatible ACP.
-2. **Codex-Web (`sjtrny/codex-web`) — Port `8000`** :
-   - Interface Web dédiée à **`codex app-server`**.
-   - Se connecte au socket partagé `/run/codex/app.sock` du conteneur `codex` (et partage les conversations en temps réel avec le terminal `tmux` de `codex`).
+## Endpoints du serveur Rust (`agent-hub`)
 
-## Exemple `docker-compose.yml` complet (`web` + `goose` + `codex` en Rootless & Read-Only)
+| Route | Description |
+| :--- | :--- |
+| `GET /`, `/app.js`, `/style.css` | Interface Web unifiée en JavaScript Natif |
+| `GET /healthz` | Healthcheck JSON (`{"status":"ok"}`) pour Docker / Traefik |
+| `GET /api/config` | Configuration par défaut détectée depuis les variables d'environnement |
+| `GET /api/status` | Sonde TCP / Socket Unix en temps réel de la disponibilité de `goose` et `codex` |
+| `GET /ws/codex` | Pont WebSocket bidirectionnel vers `codex app-server` (`?mode=ws` ou `?mode=unix`) |
+| `GET /ws/goose` | Pont WebSocket ACP vers `goose serve` (`/acp`) avec injection de `X-Secret-Key` |
+| `ANY /api/goose/*path` | Reverse-proxy HTTP vers `http://goose:3284/*path` avec authentification `X-Secret-Key` |
+
+---
+
+## Variables d'environnement
+
+| Variable | Défaut | Description |
+| :--- | :--- | :--- |
+| `PORT` | `8080` | Port HTTP d'écoute du binaire Rust |
+| `GOOSE_HTTP_URL` | `http://goose:3284` | URL HTTP interne du conteneur Goose |
+| `GOOSE_WS_URL` | `ws://goose:3284/acp` | URL WebSocket ACP interne du conteneur Goose |
+| `GOOSE_SERVER__SECRET_KEY` | *(vide)* | Clé secrète partagée avec `goose serve` (injectée par le backend Rust sans l'exposer) |
+| `CODEX_WS_URL` | `ws://codex:4500` | URL WebSocket interne du conteneur Codex (`codex app-server`) |
+| `CODEX_UNIX_SOCKET` | `/run/codex/app.sock` | Chemin du socket Unix Codex (si volume partagé entre `codex` et `web`) |
+| `DEFAULT_CWD` | `/srv` | Répertoire de travail par défaut transmis lors de la création de sessions/threads |
+
+---
+
+## Exemple `docker-compose.yml` complet (Derrière Traefik + Rootless + Read-Only)
 
 ```yaml
 services:
   web:
     image: ghcr.io/studyfranco/new_local_user:web
-    container_name: agents_web_ui
-    restart: unless-stopped
+    container_name: agent-hub-web
     user: "1000:1000"
     read_only: true
     security_opt:
       - no-new-privileges:true
     cap_drop:
       - ALL
-    ports:
-      - "3000:3000" # ACP-UI (pour Goose serve / ACP)
-      - "8000:8000" # Codex-Web (pour Codex app-server)
     environment:
-      - ACP_UI_PORT=3000
-      - CODEX_RUNTIME_DIR=/run/codex
-      - CODEX_WORKSPACE_ROOT=/srv
-      - CODEX_DEFAULT_CWD=/srv
+      - PORT=8080
+      - GOOSE_HTTP_URL=http://goose:3284
+      - GOOSE_WS_URL=ws://goose:3284/acp
+      - GOOSE_SERVER__SECRET_KEY=${GOOSE_SECRET_KEY:-change_me_secret}
+      - CODEX_WS_URL=ws://codex:4500
+      - CODEX_UNIX_SOCKET=/run/codex/app.sock
+      - DEFAULT_CWD=/srv
     tmpfs:
-      - /tmp:exec,mode=1777
+      - /tmp:rw,exec,nosuid,nodev,uid=1000,gid=1000,size=128m
     volumes:
-      - ./data/codex-run:/run/codex:ro
-      - /srv:/srv:ro
+      - codex-sock:/run/codex
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.agent-hub.rule=Host(`agents.example.com`)"
+      - "traefik.http.routers.agent-hub.entrypoints=websecure"
+      - "traefik.http.routers.agent-hub.tls.certresolver=letsencrypt"
+      - "traefik.http.services.agent-hub.loadbalancer.server.port=8080"
+    depends_on:
+      - goose
+      - codex
+    networks:
+      - traefik-public
+      - agents-internal
+    restart: unless-stopped
 
   goose:
     image: ghcr.io/studyfranco/new_local_user:goose
-    container_name: goose_cli
-    restart: unless-stopped
+    container_name: goose-agent
     user: "1000:1000"
     read_only: true
     security_opt:
       - no-new-privileges:true
     cap_drop:
       - ALL
-    ports:
-      - "3284:3284"
     environment:
-      - GOOSE_MODE=auto
-      - GOOSE_PROVIDER=${GOOSE_PROVIDER:-openai}
-      - GOOSE_MODEL=${GOOSE_MODEL:-gpt-4o}
-      - GOOSE_PROVIDER__API_KEY=${GOOSE_PROVIDER__API_KEY:-}
-      - GOOSE_SERVER__SECRET_KEY=${GOOSE_SERVER__SECRET_KEY:-change_me_secret_token}
+      - GOOSE_PROVIDER=anthropic
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - GOOSE_SERVER__SECRET_KEY=${GOOSE_SECRET_KEY:-change_me_secret}
     tmpfs:
-      - /tmp:exec,mode=1777
+      - /tmp:rw,exec,nosuid,nodev,uid=1000,gid=1000,size=512m
     volumes:
-      - ./data/goose/config:/home/thenewuser/.config/goose
-      - ./data/goose/share:/home/thenewuser/.local/share/goose
-      - ./data/goose/state:/home/thenewuser/.local/state/goose
-      - /srv:/srv
+      - ./goose-config:/home/thenewuser/.config/goose
+      - ./goose-data:/home/thenewuser/.local/share/goose
+      - ./workspace:/srv
+    networks:
+      - agents-internal
+    restart: unless-stopped
 
   codex:
     image: ghcr.io/studyfranco/new_local_user:codex
-    container_name: codex_cli
-    restart: unless-stopped
+    container_name: codex-agent
     user: "1000:1000"
     read_only: true
     security_opt:
       - no-new-privileges:true
     cap_drop:
       - ALL
-    ports:
-      - "4500:4500"
     environment:
-      - CODEX_HOME=/home/thenewuser/.codex
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
     tmpfs:
-      - /tmp:exec,mode=1777
+      - /tmp:rw,exec,nosuid,nodev,uid=1000,gid=1000,size=512m
     volumes:
-      - ./data/codex:/home/thenewuser/.codex
-      - ./data/codex-run:/run/codex
-      - /srv:/srv
-```
+      - ./codex-home:/home/thenewuser/.codex
+      - codex-sock:/run/codex
+      - ./workspace:/srv
+    networks:
+      - agents-internal
+    restart: unless-stopped
 
-## Utilisation
-- **Interface Web Goose / ACP** : ouvrir `http://localhost:3000` et renseigner `ws://<host>:3284/acp?token=<GOOSE_SERVER__SECRET_KEY>`
-- **Interface Web Codex** : ouvrir `http://localhost:8000`
+volumes:
+  codex-sock:
+
+networks:
+  traefik-public:
+    external: true
+  agents-internal:
+    driver: bridge
+```
 
 ## Last Update
 2026-11-04
