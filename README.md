@@ -1,49 +1,22 @@
-# new_local_user — Layer 1 : Base Généraliste (`master`)
+# new_local_user — Layer 2 : Google Antigravity CLI (`antigravity`)
 
-Image Docker de base généraliste (`ghcr.io/studyfranco/new_local_user:master`), conçue pour être **100 % rootless** (`USER thenewuser` `1000:1000`, sans `init.sh` ni `gosu`/`chown`) et **read-only ready** (`read_only: true`).
+Image Docker pour **Google Antigravity CLI (`agy`)** (`ghcr.io/studyfranco/new_local_user:antigravity`), basée sur `ghcr.io/studyfranco/new_local_user:master`. Conçue pour être **100 % rootless** (`1000:1000`) et **read-only ready** (`read_only: true`).
 
-## Architecture en 3 Layers (18 branches)
+## Fonctionnalités & Authentification à distance
+- **Agent CLI** : Google Antigravity CLI (`agy`) installé dans `/usr/local/bin/agy`
+- **Mode autonome & Remote Control** : Lancé automatiquement par `/usr/local/bin/run.sh` (hérité de `master`) via `/usr/local/bin/start-cli.sh` (`run-antigravity.sh`) dans une session `tmux` (`the_new_user`) avec `--dangerously-skip-permissions --remote-control` et reprise automatique (`--continue`).
+- **Tokens d'authentification headless / remote** :
+  - `GEMINI_API_KEY` : Si définie, configure automatiquement `"modelProvider": "gemini"` dans `~/.gemini/antigravity-cli/settings.json` pour une authentification directe par token sans navigateur.
+  - **Remote OAuth Flow** : Si aucune clé API n'est fournie, `SSH_TTY` active automatiquement le flux OAuth distant par URL/code à copier-coller.
+- **Configuration persistante** : Stockée dans `/home/thenewuser/.gemini`
 
-```text
-Layer 1 (Base généraliste)
-└── master (contient uniquement run.sh)
-    ├── Layer 2 (Agents CLI & Web UI — ajoutent uniquement leur start-cli.sh)
-    │   ├── claude        (Anthropic Claude Code CLI)
-    │   │   ├── claude-audio
-    │   │   ├── claude-video
-    │   │   └── claude-dev
-    │   ├── antigravity   (Google Antigravity CLI - agy)
-    │   │   ├── antigravity-audio
-    │   │   ├── antigravity-video
-    │   │   └── antigravity-dev
-    │   ├── goose         (AAIF / Block Goose CLI + goose serve ACP)
-    │   │   ├── goose-audio
-    │   │   ├── goose-video
-    │   │   └── goose-dev
-    │   ├── codex         (OpenAI Codex CLI + codex app-server)
-    │   │   ├── codex-audio
-    │   │   ├── codex-video
-    │   │   └── codex-dev
-    │   └── web           (Interfaces Web ACP-UI & Codex-Web pour se connecter à goose serve / codex app-server)
-```
-
-## Outils inclus dans `master`
-- **Base** : `ghcr.io/studyfranco/docker-baseimages-debian:testing-video`
-- **Système & Réseau** : `build-essential`, `netcat-openbsd`, `lsof`, `procps`, `jq`, `rsync`, `zip`, `7zip`, `pkg-config`, `openssl`, `curl`, `git`, `strace`, `tmux`
-- **Python** : `python3-venv`, `python3-pip`, `py-spy`
-- **Utilisateur non-root** : `thenewuser` (`UID=1000`, `GID=1000`)
-
-## Conception Rootless & Read-Only (`read_only: true`)
-- **Aucun `init.sh` root** : L'`ENTRYPOINT` est directement `/usr/local/bin/run.sh` exécuté sous `USER thenewuser` (`1000:1000`). Compatible avec Docker Rootless, Podman Rootless, `user: "1000:1000"`, `cap_drop: [ALL]` et `no-new-privileges:true`.
-- **Héritage propre des scripts** : `run.sh` dans `master` lance `/usr/local/bin/start-cli.sh` s'il est fourni par un Layer 2 (sinon `/bin/bash`). Les branches filles ne redéfinissent jamais les scripts des couches parentes.
-
-## Exemple `docker-compose.yml`
+## Exemple `docker-compose.yml` (Rootless & Read-Only)
 
 ```yaml
 services:
-  base-shell:
-    image: ghcr.io/studyfranco/new_local_user:master
-    container_name: new_local_user_base
+  antigravity:
+    image: ghcr.io/studyfranco/new_local_user:antigravity
+    container_name: antigravity_cli
     restart: unless-stopped
     user: "1000:1000"
     read_only: true
@@ -51,18 +24,20 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
     tmpfs:
       - /tmp:exec,mode=1777
     volumes:
-      - ./data/home:/home/thenewuser
+      - ./data/gemini:/home/thenewuser/.gemini
       - /srv:/srv
       - /mnt:/mnt
 ```
 
 ## Utilisation
-Rejoindre la session `tmux` active :
+Rejoindre la session `tmux` d'Antigravity :
 ```bash
-docker exec -it new_local_user_base tmux attach -t the_new_user
+docker exec -it antigravity_cli tmux attach -t the_new_user
 ```
 
 ## Last Update
