@@ -1,22 +1,19 @@
-# new_local_user — Layer 2 : Google Antigravity CLI (`antigravity`)
+# new_local_user — Layer 3 : Antigravity CLI + Dev Python & Rust (`antigravity-dev`)
 
-Image Docker pour **Google Antigravity CLI (`agy`)** (`ghcr.io/studyfranco/new_local_user:antigravity`), basée sur `ghcr.io/studyfranco/new_local_user:master`. Conçue pour être **100 % rootless** (`1000:1000`) et **read-only ready** (`read_only: true`).
+Image Docker **Google Antigravity CLI (`agy`) + environnement de développement Python & Rust** (`ghcr.io/studyfranco/new_local_user:antigravity-dev`), basée sur `ghcr.io/studyfranco/new_local_user:antigravity`. Conçue pour être **100 % rootless** (`1000:1000`) et **read-only ready** (`read_only: true`).
 
-## Fonctionnalités & Authentification à distance
-- **Agent CLI** : Google Antigravity CLI (`agy`) installé dans `/usr/local/bin/agy`
-- **Mode autonome & Remote Control** : Lancé automatiquement par `/usr/local/bin/run.sh` (hérité de `master`) via `/usr/local/bin/start-cli.sh` (`run-antigravity.sh`) dans une session `tmux` (`the_new_user`) avec `--dangerously-skip-permissions --remote-control` et reprise automatique (`--continue`).
-- **Tokens d'authentification headless / remote** :
-  - `GEMINI_API_KEY` : Si définie, configure automatiquement `"modelProvider": "gemini"` dans `~/.gemini/antigravity-cli/settings.json` pour une authentification directe par token sans navigateur.
-  - **Remote OAuth Flow** : Si aucune clé API n'est fournie, `SSH_TTY` active automatiquement le flux OAuth distant par URL/code à copier-coller.
-- **Configuration persistante** : Stockée dans `/home/thenewuser/.gemini`
+## Outils de Développement inclus
+- **Rust** : `rustc`, `cargo`, `rustfmt`, `clippy`, `rust-analyzer`, `clang`, `lld`, `lldb`, `gdb`, `cmake`, `libssl-dev`
+- **Python** : `python3-dev`, `python3-venv`, `python3-pip`, `pipx`, `uv`, `ruff`, `black`, `mypy`, `pytest`, `ipython`, `py-spy`
+- **Agent CLI** : Google Antigravity CLI (`agy`) avec `--remote-control` (hérité du layer 2 `antigravity`)
 
 ## Exemple `docker-compose.yml` (Rootless & Read-Only)
 
 ```yaml
 services:
-  antigravity:
-    image: ghcr.io/studyfranco/new_local_user:antigravity
-    container_name: antigravity_cli
+  antigravity-dev:
+    image: ghcr.io/studyfranco/new_local_user:antigravity-dev
+    container_name: antigravity_dev
     restart: unless-stopped
     user: "1000:1000"
     read_only: true
@@ -30,14 +27,15 @@ services:
       - /tmp:exec,mode=1777
     volumes:
       - ./data/gemini:/home/thenewuser/.gemini
-      - /srv:/srv
+      - ./data/cargo:/tmp/cargo
+      - /srv/projects:/srv/projects
       - /mnt:/mnt
 ```
 
 ## Utilisation
 Rejoindre la session `tmux` d'Antigravity :
 ```bash
-docker exec -it antigravity_cli tmux attach -t the_new_user
+docker exec -it antigravity_dev tmux attach -t the_new_user
 ```
 
 ## Last Update
