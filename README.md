@@ -1,21 +1,19 @@
-# new_local_user — Layer 2 : Goose CLI (`goose`)
+# new_local_user — Layer 3 : Goose CLI + Audio (`goose-audio`)
 
-Image Docker pour **Goose CLI (`goose`)** (`ghcr.io/studyfranco/new_local_user:goose`), basée sur `ghcr.io/studyfranco/new_local_user:master`. Conçue pour être **100 % rootless** (`1000:1000`) et **read-only ready** (`read_only: true`).
+Image Docker **Goose CLI (`goose`) + gestion de bibliothèque musicale** (`ghcr.io/studyfranco/new_local_user:goose-audio`), basée sur `ghcr.io/studyfranco/new_local_user:goose`. Conçue pour être **100 % rootless** (`1000:1000`) et **read-only ready** (`read_only: true`).
 
-## Fonctionnalités & Serveur ACP distant (`goose serve`)
-- **Agent CLI** : Goose CLI (`goose`) installé dans `/usr/local/bin/goose`
-- **Mode autonome** : `GOOSE_MODE=auto` activé par défaut, lancé par `/usr/local/bin/run.sh` (hérité de `master`) via `/usr/local/bin/start-cli.sh` (`run-goose.sh`) dans une session `tmux` (`the_new_user`) avec reprise automatique (`goose session --resume || goose session`).
-- **Connexion Web UI / Remote ACP (`goose serve`)** :
-  - Lorsque `GOOSE_SERVER__SECRET_KEY` est défini, `goose serve --host 0.0.0.0 --port 3284` démarre en arrière-plan et expose le protocole **ACP (Agent Client Protocol)** sur `ws://goose_cli:3284/acp?token=<GOOSE_SERVER__SECRET_KEY>` pour être piloté depuis le conteneur de la branche `web` (`acp-ui`) ou Goose Desktop.
-- **Tokens Provider Headless** : `GOOSE_PROVIDER`, `GOOSE_MODEL` et `GOOSE_PROVIDER__API_KEY`.
+## Outils Audio & Serveur ACP distant
+- **Outils Audio** : `beets`, `picard` (`xvfb`), `shntool`, `flac`, `wavpack`, `fdupes`, `dos2unix`, `recode`, `coreutils`
+- **Agent CLI** : Goose CLI (`goose`) + `goose serve` (port `3284`, hérité du layer 2 `goose`)
+- **Tokens d'authentification headless / remote** : `GOOSE_PROVIDER`, `GOOSE_MODEL`, `GOOSE_PROVIDER__API_KEY` et `GOOSE_SERVER__SECRET_KEY`.
 
 ## Exemple `docker-compose.yml` (Rootless & Read-Only)
 
 ```yaml
 services:
-  goose:
-    image: ghcr.io/studyfranco/new_local_user:goose
-    container_name: goose_cli
+  goose-audio:
+    image: ghcr.io/studyfranco/new_local_user:goose-audio
+    container_name: goose_audio
     restart: unless-stopped
     user: "1000:1000"
     read_only: true
@@ -34,17 +32,17 @@ services:
     tmpfs:
       - /tmp:exec,mode=1777
     volumes:
-      - ./data/goose/config:/home/thenewuser/.config/goose
+      - ./data/goose/config:/home/thenewuser/.config
       - ./data/goose/share:/home/thenewuser/.local/share/goose
       - ./data/goose/state:/home/thenewuser/.local/state/goose
-      - /srv:/srv
+      - /srv/music:/srv/music
       - /mnt:/mnt
 ```
 
 ## Utilisation
 Rejoindre la session `tmux` de Goose :
 ```bash
-docker exec -it goose_cli tmux attach -t the_new_user
+docker exec -it goose_audio tmux attach -t the_new_user
 ```
 
 ## Last Update
