@@ -1,49 +1,21 @@
-# new_local_user — Layer 1 : Base Généraliste (`master`)
+# new_local_user — Layer 2 : Goose CLI (`goose`)
 
-Image Docker de base généraliste (`ghcr.io/studyfranco/new_local_user:master`), conçue pour être **100 % rootless** (`USER thenewuser` `1000:1000`, sans `init.sh` ni `gosu`/`chown`) et **read-only ready** (`read_only: true`).
+Image Docker pour **Goose CLI (`goose`)** (`ghcr.io/studyfranco/new_local_user:goose`), basée sur `ghcr.io/studyfranco/new_local_user:master`. Conçue pour être **100 % rootless** (`1000:1000`) et **read-only ready** (`read_only: true`).
 
-## Architecture en 3 Layers (18 branches)
+## Fonctionnalités & Serveur ACP distant (`goose serve`)
+- **Agent CLI** : Goose CLI (`goose`) installé dans `/usr/local/bin/goose`
+- **Mode autonome** : `GOOSE_MODE=auto` activé par défaut, lancé par `/usr/local/bin/run.sh` (hérité de `master`) via `/usr/local/bin/start-cli.sh` (`run-goose.sh`) dans une session `tmux` (`the_new_user`) avec reprise automatique (`goose session --resume || goose session`).
+- **Connexion Web UI / Remote ACP (`goose serve`)** :
+  - Lorsque `GOOSE_SERVER__SECRET_KEY` est défini, `goose serve --host 0.0.0.0 --port 3284` démarre en arrière-plan et expose le protocole **ACP (Agent Client Protocol)** sur `ws://goose_cli:3284/acp?token=<GOOSE_SERVER__SECRET_KEY>` pour être piloté depuis le conteneur de la branche `web` (`acp-ui`) ou Goose Desktop.
+- **Tokens Provider Headless** : `GOOSE_PROVIDER`, `GOOSE_MODEL` et `GOOSE_PROVIDER__API_KEY`.
 
-```text
-Layer 1 (Base généraliste)
-└── master (contient uniquement run.sh)
-    ├── Layer 2 (Agents CLI & Web UI — ajoutent uniquement leur start-cli.sh)
-    │   ├── claude        (Anthropic Claude Code CLI)
-    │   │   ├── claude-audio
-    │   │   ├── claude-video
-    │   │   └── claude-dev
-    │   ├── antigravity   (Google Antigravity CLI - agy)
-    │   │   ├── antigravity-audio
-    │   │   ├── antigravity-video
-    │   │   └── antigravity-dev
-    │   ├── goose         (AAIF / Block Goose CLI + goose serve ACP)
-    │   │   ├── goose-audio
-    │   │   ├── goose-video
-    │   │   └── goose-dev
-    │   ├── codex         (OpenAI Codex CLI + codex app-server)
-    │   │   ├── codex-audio
-    │   │   ├── codex-video
-    │   │   └── codex-dev
-    │   └── web           (Interfaces Web ACP-UI & Codex-Web pour se connecter à goose serve / codex app-server)
-```
-
-## Outils inclus dans `master`
-- **Base** : `ghcr.io/studyfranco/docker-baseimages-debian:testing-video`
-- **Système & Réseau** : `build-essential`, `netcat-openbsd`, `lsof`, `procps`, `jq`, `rsync`, `zip`, `7zip`, `pkg-config`, `openssl`, `curl`, `git`, `strace`, `tmux`
-- **Python** : `python3-venv`, `python3-pip`, `py-spy`
-- **Utilisateur non-root** : `thenewuser` (`UID=1000`, `GID=1000`)
-
-## Conception Rootless & Read-Only (`read_only: true`)
-- **Aucun `init.sh` root** : L'`ENTRYPOINT` est directement `/usr/local/bin/run.sh` exécuté sous `USER thenewuser` (`1000:1000`). Compatible avec Docker Rootless, Podman Rootless, `user: "1000:1000"`, `cap_drop: [ALL]` et `no-new-privileges:true`.
-- **Héritage propre des scripts** : `run.sh` dans `master` lance `/usr/local/bin/start-cli.sh` s'il est fourni par un Layer 2 (sinon `/bin/bash`). Les branches filles ne redéfinissent jamais les scripts des couches parentes.
-
-## Exemple `docker-compose.yml`
+## Exemple `docker-compose.yml` (Rootless & Read-Only)
 
 ```yaml
 services:
-  base-shell:
-    image: ghcr.io/studyfranco/new_local_user:master
-    container_name: new_local_user_base
+  goose:
+    image: ghcr.io/studyfranco/new_local_user:goose
+    container_name: goose_cli
     restart: unless-stopped
     user: "1000:1000"
     read_only: true
@@ -51,18 +23,28 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    ports:
+      - "3284:3284"
+    environment:
+      - GOOSE_MODE=auto
+      - GOOSE_PROVIDER=${GOOSE_PROVIDER:-openai}
+      - GOOSE_MODEL=${GOOSE_MODEL:-gpt-4o}
+      - GOOSE_PROVIDER__API_KEY=${GOOSE_PROVIDER__API_KEY:-}
+      - GOOSE_SERVER__SECRET_KEY=${GOOSE_SERVER__SECRET_KEY:-change_me_secret_token}
     tmpfs:
       - /tmp:exec,mode=1777
     volumes:
-      - ./data/home:/home/thenewuser
+      - ./data/goose/config:/home/thenewuser/.config/goose
+      - ./data/goose/share:/home/thenewuser/.local/share/goose
+      - ./data/goose/state:/home/thenewuser/.local/state/goose
       - /srv:/srv
       - /mnt:/mnt
 ```
 
 ## Utilisation
-Rejoindre la session `tmux` active :
+Rejoindre la session `tmux` de Goose :
 ```bash
-docker exec -it new_local_user_base tmux attach -t the_new_user
+docker exec -it goose_cli tmux attach -t the_new_user
 ```
 
 ## Last Update
