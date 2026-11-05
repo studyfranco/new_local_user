@@ -5,32 +5,37 @@ LABEL maintainer="studyfranco@gmail.com"
 USER root
 
 RUN set -x \
+    && mkdir -p /var/cache/apt/archives/partial /var/lib/apt/lists/partial \
     && apt update \
     && apt dist-upgrade -y \
     && apt autopurge -yy \
     && apt clean autoclean -y \
-    && rm -rf /var/cache/* /var/lib/apt/lists/* /var/log/* /var/tmp/* /tmp/*
+    && rm -rf /var/lib/apt/lists/* /var/log/* /var/tmp/* /tmp/*
 
 RUN set -x \
+    && mkdir -p /var/cache/apt/archives/partial /var/lib/apt/lists/partial \
     && apt update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y build-essential netcat-openbsd lsof procps jq rsync zip 7zip pkg-config openssl ca-certificates curl git --no-install-recommends --fix-missing \
     && apt autopurge -yy \
     && apt clean \
-    && rm -rf /var/cache/* /var/lib/apt/lists/* /var/log/* /var/tmp/* /tmp/*
+    && rm -rf /var/lib/apt/lists/* /var/log/* /var/tmp/* /tmp/*
 
 RUN set -x \
+    && mkdir -p /var/cache/apt/archives/partial /var/lib/apt/lists/partial \
     && apt update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y strace tmux --no-install-recommends --fix-missing \
     && apt autopurge -yy \
     && apt clean \
-    && rm -rf /var/cache/* /var/lib/apt/lists/* /var/log/* /var/tmp/* /tmp/*
+    && rm -rf /var/lib/apt/lists/* /var/log/* /var/tmp/* /tmp/*
 
 RUN set -x \
+    && mkdir -p /var/cache/apt/archives/partial /var/lib/apt/lists/partial \
     && apt update \
     && DEBIAN_FRONTEND=noninteractive apt install -y python3-venv python3-pip --no-install-recommends \
     && python3 -m pip install --break-system-packages py-spy \
     && apt clean autoclean -y \
-    && rm -rf /var/cache/* /var/lib/apt/lists/* /var/log/* /var/tmp/* /tmp/* /root/.cache
+    && rm -rf /var/lib/apt/lists/* /var/log/* /var/tmp/* /tmp/* /root/.cache \
+    && mkdir -p /var/cache/apt/archives/partial /var/lib/apt/lists/partial
 
 RUN set -x \
     && groupadd -g 1000 thenewuser \
