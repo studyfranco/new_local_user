@@ -7,7 +7,7 @@ USER root
 RUN set -x \
     && mkdir -p /var/cache/apt/archives/partial /var/lib/apt/lists/partial \
     && apt update \
-    && apt dist-upgrade -y \
+    && DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y \
     && apt autopurge -yy \
     && apt clean autoclean -y \
     && rm -rf /var/lib/apt/lists/* /var/log/* /var/tmp/* /tmp/*
