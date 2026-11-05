@@ -1,181 +1,363 @@
 <!DOCTYPE html>
 <html lang="fr">
+
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Agent Hub — Goose &amp; Codex Remote UI</title>
-  <link rel="stylesheet" href="/style.css" />
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Simply Agent Hub — Interface Web unifiée et pont d'orchestration inter-agents pour Codex, Goose, Claude et Antigravity.">
+    <title>Simply Agent Hub</title>
+    <link rel="stylesheet" href="/style.css">
 </head>
+
 <body>
-  <div class="app-layout">
-    <!-- Sidebar -->
-    <aside class="sidebar">
-      <div class="brand">
-        <div class="brand-logo">⚡</div>
-        <div>
-          <h1>Agent Hub</h1>
-          <span class="brand-sub">Rust API &bull; Native JS</span>
-        </div>
-      </div>
+    <div id="dashboard-container" class="container">
+        <div id="top-bar" class="top-bar">
+            <header class="header">
+                <div class="logo">
+                    <div class="logo-icon"></div>
+                    <h1>Simply Agent Hub</h1>
+                </div>
+                <div class="header-actions">
+                    <span id="badge-codex" class="badge" title="État du conteneur Codex (app-server)">
+                        <span id="dot-codex" class="status-dot"></span> Codex
+                    </span>
+                    <span id="badge-goose" class="badge" title="État du conteneur Goose (goose serve ACP)">
+                        <span id="dot-goose" class="status-dot"></span> Goose
+                    </span>
+                    <span id="badge-claude" class="badge" title="État du pont Claude (port 3285)">
+                        <span id="dot-claude" class="status-dot"></span> Claude
+                    </span>
+                    <span id="badge-antigravity" class="badge" title="État du pont Antigravity (port 3286)">
+                        <span id="dot-antigravity" class="status-dot"></span> Antigravity
+                    </span>
+                    <button id="btn-probe" class="btn btn-secondary btn-sm">↻ Vérifier les conteneurs</button>
+                </div>
+            </header>
 
-      <!-- Agent Switcher -->
-      <div class="section-label">Moteur CLI distant</div>
-      <div class="agent-tabs">
-        <button id="tab-codex" class="agent-tab active" data-agent="codex">
-          <span class="status-dot" id="dot-codex"></span>
-          <div class="tab-info">
-            <strong>Codex</strong>
-            <small>app-server JSON-RPC</small>
-          </div>
-        </button>
-        <button id="tab-goose" class="agent-tab" data-agent="goose">
-          <span class="status-dot" id="dot-goose"></span>
-          <div class="tab-info">
-            <strong>Goose</strong>
-            <small>goose serve ACP</small>
-          </div>
-        </button>
-      </div>
-
-      <!-- Connection Configuration Panel -->
-      <div class="config-card">
-        <div class="config-header">
-          <span id="config-title">Connexion Codex</span>
-          <button id="btn-probe" class="btn-icon" title="Vérifier l'état des conteneurs">↻</button>
+            <!-- Tab Navigation -->
+            <nav class="tab-nav" role="tablist">
+                <button class="tab-btn active" data-tab="codex" role="tab" aria-selected="true">Codex (app-server)</button>
+                <button class="tab-btn" data-tab="goose" role="tab" aria-selected="false">Goose (ACP Serve)</button>
+                <button class="tab-btn" data-tab="inter-agent" role="tab" aria-selected="false">Pont Inter-Agents (Orchestration)</button>
+                <button class="tab-btn" data-tab="peers" role="tab" aria-selected="false">Claude &amp; Antigravity (Bridge)</button>
+                <button class="tab-btn" data-tab="rpc" role="tab" aria-selected="false">Inspecteur JSON-RPC</button>
+            </nav>
         </div>
 
-        <!-- Codex Controls -->
-        <div id="controls-codex" class="agent-controls">
-          <label class="field-label">Transport</label>
-          <select id="codex-mode" class="input-field">
-            <option value="ws">WebSocket (ws://codex:4500)</option>
-            <option value="unix">Socket Unix (/run/codex/app.sock)</option>
-          </select>
+        <!-- ═══════════════════════════════════════════════ -->
+        <!-- TAB 1: CODEX (codex app-server)                 -->
+        <!-- ═══════════════════════════════════════════════ -->
+        <main id="tab-codex" class="tab-panel active">
+            <div class="workspace-grid">
+                <section class="card">
+                    <h2>Connexion Codex</h2>
+                    <p class="subtitle">Pilotez <code>codex app-server</code> en JSON-RPC 2.0 via WebSocket ou Socket Unix.</p>
 
-          <label class="field-label">Cible (optionnel)</label>
-          <input id="codex-target" type="text" class="input-field" placeholder="ws://codex:4500" />
+                    <div class="form-group">
+                        <label for="codex-mode">Transport</label>
+                        <select id="codex-mode" class="input-field">
+                            <option value="ws">WebSocket (ws://codex:4500)</option>
+                            <option value="unix">Socket Unix (/run/codex/app.sock)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="codex-target">URL / Socket cible (optionnel)</label>
+                        <input id="codex-target" type="text" class="input-field mono" placeholder="ws://codex:4500">
+                    </div>
+                    <div class="form-group">
+                        <label for="codex-cwd">Répertoire de travail (cwd)</label>
+                        <input id="codex-cwd" type="text" class="input-field mono" value="/srv">
+                    </div>
+                    <div class="btn-row">
+                        <button id="btn-codex-connect" class="btn btn-primary">Connecter Codex</button>
+                        <button id="btn-codex-new" class="btn btn-secondary">+ Nouveau Thread</button>
+                        <button id="btn-codex-refresh" class="btn btn-secondary btn-sm">↻ Threads</button>
+                    </div>
 
-          <label class="field-label">Répertoire de travail (cwd)</label>
-          <input id="codex-cwd" type="text" class="input-field" value="/srv" />
+                    <hr style="border:none;border-top:1px solid var(--border);margin:1.1rem 0;">
+                    <h2>Threads actifs</h2>
+                    <div id="codex-thread-list" class="session-list">
+                        <div class="field-hint">Aucun thread chargé</div>
+                    </div>
+                </section>
 
-          <div class="btn-row">
-            <button id="btn-codex-connect" class="btn btn-primary">Connecter</button>
-            <button id="btn-codex-new" class="btn btn-secondary">+ Thread</button>
-          </div>
-        </div>
+                <section class="card chat-card">
+                    <div class="chat-header">
+                        <div>
+                            <span id="codex-conn-badge" class="badge">Déconnecté</span>
+                            <span id="codex-active-thread" class="badge badge-tier">Aucun thread</span>
+                        </div>
+                        <div class="btn-row" style="margin-top:0;">
+                            <button id="btn-codex-interrupt" class="btn btn-danger btn-sm hidden">⏹ Interrompre le tour</button>
+                            <button id="btn-codex-clear" class="btn btn-secondary btn-sm">Effacer</button>
+                        </div>
+                    </div>
 
-        <!-- Goose Controls -->
-        <div id="controls-goose" class="agent-controls hidden">
-          <label class="field-label">Mode ACP</label>
-          <select id="goose-mode" class="input-field">
-            <option value="ws">WebSocket (/ws/goose &rarr; /acp)</option>
-            <option value="http">HTTP JSON-RPC (/api/goose/acp)</option>
-          </select>
+                    <div id="codex-messages" class="messages-stream">
+                        <div class="msg msg-system">
+                            <div class="msg-header"><span>Système Codex</span></div>
+                            <div class="msg-body">Cliquez sur « Connecter Codex » pour initialiser le flux JSON-RPC 2.0 avec codex app-server.</div>
+                        </div>
+                    </div>
 
-          <label class="field-label">URL Goose (optionnel)</label>
-          <input id="goose-target" type="text" class="input-field" placeholder="ws://goose:3284/acp" />
+                    <div id="codex-approval-banner" class="approval-banner hidden">
+                        <div>
+                            <strong>Autorisation requise par Codex</strong>
+                            <pre id="codex-approval-details"></pre>
+                        </div>
+                        <div class="btn-row">
+                            <button id="btn-codex-approve" class="btn btn-primary btn-sm">Autoriser</button>
+                            <button id="btn-codex-decline" class="btn btn-danger btn-sm">Refuser</button>
+                        </div>
+                    </div>
 
-          <label class="field-label">Clé secrète (si non définie côté serveur)</label>
-          <input id="goose-token" type="password" class="input-field" placeholder="GOOSE_SERVER__SECRET_KEY" />
-
-          <label class="field-label">Répertoire de travail (cwd)</label>
-          <input id="goose-cwd" type="text" class="input-field" value="/srv" />
-
-          <div class="btn-row">
-            <button id="btn-goose-connect" class="btn btn-primary">Connecter</button>
-            <button id="btn-goose-new" class="btn btn-secondary">+ Session</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Sessions / Threads List -->
-      <div class="sessions-header">
-        <span class="section-label" id="sessions-label">Threads Codex</span>
-        <button id="btn-refresh-sessions" class="btn-icon" title="Rafraîchir la liste">⟳</button>
-      </div>
-      <div id="session-list" class="session-list">
-        <div class="empty-hint">Aucun thread actif</div>
-      </div>
-
-      <div class="sidebar-footer">
-        <button id="btn-toggle-rpc" class="btn btn-ghost">Inspecteur JSON-RPC</button>
-      </div>
-    </aside>
-
-    <!-- Main Chat Area -->
-    <main class="main-area">
-      <header class="topbar">
-        <div class="topbar-left">
-          <span class="badge" id="conn-badge">Déconnecté</span>
-          <span class="active-session-id" id="active-session-display">Aucune session sélectionnée</span>
-        </div>
-        <div class="topbar-right">
-          <button id="btn-interrupt" class="btn btn-danger hidden">⏹ Interrompre</button>
-          <button id="btn-clear-chat" class="btn btn-ghost">Effacer l'écran</button>
-        </div>
-      </header>
-
-      <div id="messages-container" class="messages-container">
-        <div class="welcome-card">
-          <h2>Bienvenue sur Agent Hub</h2>
-          <p>Interface Web unifiée (Backend Rust + JS Natif) pour piloter vos conteneurs <strong>Codex</strong> (<code>codex app-server</code>) et <strong>Goose</strong> (<code>goose serve</code>) derrière Traefik.</p>
-          <div class="welcome-steps">
-            <div class="step-item">
-              <strong>1. Choisissez l'agent</strong>
-              <span>Sélectionnez <em>Codex</em> ou <em>Goose</em> dans la barre latérale.</span>
+                    <form id="codex-prompt-form" class="composer-bar">
+                        <textarea id="codex-prompt-input" class="input-field" placeholder="Instruction pour Codex... (Astuce : mentionnez @goose, @claude ou @antigravity pour leur relayer la réponse)"></textarea>
+                        <button type="submit" class="btn btn-primary">Envoyer ➤</button>
+                    </form>
+                </section>
             </div>
-            <div class="step-item">
-              <strong>2. Connectez le flux</strong>
-              <span>Cliquez sur <em>Connecter</em> pour établir le pont WebSocket / Unix Socket via le serveur Rust.</span>
+        </main>
+
+        <!-- ═══════════════════════════════════════════════ -->
+        <!-- TAB 2: GOOSE (goose serve ACP)                  -->
+        <!-- ═══════════════════════════════════════════════ -->
+        <main id="tab-goose" class="tab-panel">
+            <div class="workspace-grid">
+                <section class="card">
+                    <h2>Connexion Goose ACP</h2>
+                    <p class="subtitle">Pilotez <code>goose serve</code> via le protocole Agent Client Protocol (ACP).</p>
+
+                    <div class="form-group">
+                        <label for="goose-mode">Protocole de transport</label>
+                        <select id="goose-mode" class="input-field">
+                            <option value="ws">WebSocket ACP (/ws/goose &rarr; /acp)</option>
+                            <option value="http">HTTP JSON-RPC (/api/goose/acp)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="goose-target">URL Goose cible (optionnel)</label>
+                        <input id="goose-target" type="text" class="input-field mono" placeholder="ws://goose:3284/acp">
+                    </div>
+                    <div class="form-group">
+                        <label for="goose-token">Clé secrète (X-Secret-Key)</label>
+                        <input id="goose-token" type="password" class="input-field mono" placeholder="GOOSE_SERVER__SECRET_KEY">
+                        <small class="field-hint">Injectée automatiquement par le backend Rust si définie dans l'environnement.</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="goose-cwd">Répertoire de travail (cwd)</label>
+                        <input id="goose-cwd" type="text" class="input-field mono" value="/srv">
+                    </div>
+                    <div class="btn-row">
+                        <button id="btn-goose-connect" class="btn btn-primary">Connecter Goose</button>
+                        <button id="btn-goose-new" class="btn btn-secondary">+ Nouvelle Session</button>
+                    </div>
+
+                    <hr style="border:none;border-top:1px solid var(--border);margin:1.1rem 0;">
+                    <h2>Sessions Goose ACP</h2>
+                    <div id="goose-session-list" class="session-list">
+                        <div class="field-hint">Aucune session active</div>
+                    </div>
+                </section>
+
+                <section class="card chat-card">
+                    <div class="chat-header">
+                        <div>
+                            <span id="goose-conn-badge" class="badge">Déconnecté</span>
+                            <span id="goose-active-session" class="badge badge-tier">Aucune session</span>
+                        </div>
+                        <div class="btn-row" style="margin-top:0;">
+                            <button id="btn-goose-cancel" class="btn btn-danger btn-sm hidden">⏹ Annuler</button>
+                            <button id="btn-goose-clear" class="btn btn-secondary btn-sm">Effacer</button>
+                        </div>
+                    </div>
+
+                    <div id="goose-messages" class="messages-stream">
+                        <div class="msg msg-system">
+                            <div class="msg-header"><span>Système Goose</span></div>
+                            <div class="msg-body">Cliquez sur « Connecter Goose » pour initialiser une session ACP avec goose serve.</div>
+                        </div>
+                    </div>
+
+                    <div id="goose-approval-banner" class="approval-banner hidden">
+                        <div>
+                            <strong>Demande de permission Goose</strong>
+                            <pre id="goose-approval-details"></pre>
+                        </div>
+                        <div class="btn-row">
+                            <button id="btn-goose-approve" class="btn btn-primary btn-sm">Autoriser</button>
+                            <button id="btn-goose-decline" class="btn btn-danger btn-sm">Refuser</button>
+                        </div>
+                    </div>
+
+                    <form id="goose-prompt-form" class="composer-bar">
+                        <textarea id="goose-prompt-input" class="input-field" placeholder="Instruction pour Goose..."></textarea>
+                        <button type="submit" class="btn btn-primary">Envoyer ➤</button>
+                    </form>
+                </section>
             </div>
-            <div class="step-item">
-              <strong>3. Lancez vos instructions</strong>
-              <span>Créez un Thread/Session et interagissez en temps réel avec validation des outils.</span>
+        </main>
+
+        <!-- ═══════════════════════════════════════════════ -->
+        <!-- TAB 3: INTER-AGENT BRIDGE & ORCHESTRATION       -->
+        <!-- ═══════════════════════════════════════════════ -->
+        <main id="tab-inter-agent" class="tab-panel">
+            <div class="workspace-grid">
+                <section class="card">
+                    <h2>Orchestration Inter-Agents</h2>
+                    <p class="subtitle">Faites dialoguer et coopérer <strong>Codex</strong>, <strong>Goose</strong>, <strong>Claude</strong> et <strong>Antigravity</strong> sur une tâche commune.</p>
+
+                    <div class="form-group">
+                        <label for="bridge-step-1">Étape 1 — Agent initiateur (Architecte / Analyste)</label>
+                        <select id="bridge-step-1" class="input-field">
+                            <option value="codex">Codex (app-server)</option>
+                            <option value="goose">Goose (ACP serve)</option>
+                            <option value="claude">Claude Code (Bridge 3285)</option>
+                            <option value="antigravity">Antigravity (Bridge 3286)</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="bridge-step-2">Étape 2 — Agent exécutant / pair (Second maillon)</label>
+                        <select id="bridge-step-2" class="input-field">
+                            <option value="goose">Goose (ACP serve)</option>
+                            <option value="codex">Codex (app-server)</option>
+                            <option value="claude">Claude Code (Bridge 3285)</option>
+                            <option value="antigravity">Antigravity (Bridge 3286)</option>
+                            <option value="">(Aucun — étape unique)</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="bridge-step-3">Étape 3 — Agent vérificateur / relecteur (Optionnel)</label>
+                        <select id="bridge-step-3" class="input-field">
+                            <option value="">(Aucun)</option>
+                            <option value="claude">Claude Code (Bridge 3285)</option>
+                            <option value="antigravity">Antigravity (Bridge 3286)</option>
+                            <option value="codex">Codex (app-server)</option>
+                            <option value="goose">Goose (ACP serve)</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="bridge-cwd">Répertoire partagé (cwd)</label>
+                        <input id="bridge-cwd" type="text" class="input-field mono" value="/srv">
+                        <small class="field-hint">
+                            En outre, depuis le terminal interne de n'importe quel conteneur, un agent peut appeler un pair via la commande CLI :
+                            <code>agent-ask codex "Vérifie ce code"</code>
+                        </small>
+                    </div>
+
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="bridge-auto-mention" checked>
+                            Router automatiquement les mentions <code>@codex</code>, <code>@goose</code>, <code>@claude</code>, <code>@antigravity</code> présentes dans la réponse d'un agent
+                        </label>
+                    </div>
+                </section>
+
+                <section class="card chat-card">
+                    <div class="chat-header">
+                        <div>
+                            <span class="badge badge-online">Salon Multi-Agents Actif</span>
+                            <span id="bridge-status-badge" class="badge badge-tier">Prêt</span>
+                        </div>
+                        <button id="btn-bridge-clear" class="btn btn-secondary btn-sm">Effacer le salon</button>
+                    </div>
+
+                    <div id="bridge-messages" class="messages-stream">
+                        <div class="msg msg-system">
+                            <div class="msg-header"><span>Pont Inter-Agents (Rust Orchestrator)</span></div>
+                            <div class="msg-body">Lancez un pipeline multi-agents ci-dessous : chaque agent recevra l'objectif initial ainsi que les réponses produites par les agents précédents. Si un agent écrit @codex, @goose, @claude ou @antigravity dans sa réponse, le serveur Rust transmet automatiquement la question à l'agent ciblé.</div>
+                        </div>
+                    </div>
+
+                    <form id="bridge-form" class="composer-bar">
+                        <textarea id="bridge-input" class="input-field" placeholder="Décrivez la mission collaborative (ex: 'Analyse l'architecture de /srv puis propose et vérifie un correctif')..."></textarea>
+                        <button type="submit" id="btn-bridge-run" class="btn btn-primary">Lancer le relais ➤</button>
+                    </form>
+                </section>
             </div>
-          </div>
-        </div>
-      </div>
+        </main>
 
-      <!-- Pending Approval Banner -->
-      <div id="approval-banner" class="approval-banner hidden">
-        <div class="approval-info">
-          <strong>Demande d'autorisation d'outil</strong>
-          <pre id="approval-details"></pre>
-        </div>
-        <div class="approval-actions">
-          <button id="btn-approve" class="btn btn-success">Autoriser</button>
-          <button id="btn-decline" class="btn btn-danger">Refuser</button>
-        </div>
-      </div>
+        <!-- ═══════════════════════════════════════════════ -->
+        <!-- TAB 4: CLAUDE & ANTIGRAVITY (BRIDGE & TMUX)     -->
+        <!-- ═══════════════════════════════════════════════ -->
+        <main id="tab-peers" class="tab-panel">
+            <div class="workspace-grid">
+                <section class="card">
+                    <h2>Pont Claude &amp; Antigravity</h2>
+                    <p class="subtitle">Interagissez avec les conteneurs <code>claude</code> (port 3285) et <code>antigravity</code> (port 3286) en mode CLI Headless (<code>-p</code>) ou via leur session <code>tmux</code>.</p>
 
-      <!-- Prompt Composer -->
-      <form id="prompt-form" class="composer">
-        <textarea
-          id="prompt-input"
-          rows="2"
-          placeholder="Écrivez votre instruction pour l'agent... (Entrée pour envoyer, Shift+Entrée pour nouvelle ligne)"
-        ></textarea>
-        <button type="submit" id="btn-send" class="btn btn-send">Envoyer ➤</button>
-      </form>
+                    <div class="form-group">
+                        <label for="peer-agent">Agent cible</label>
+                        <select id="peer-agent" class="input-field">
+                            <option value="claude">Claude Code (http://claude:3285)</option>
+                            <option value="antigravity">Antigravity CLI (http://antigravity:3286)</option>
+                        </select>
+                    </div>
 
-      <!-- Raw JSON-RPC Inspector Drawer -->
-      <section id="rpc-drawer" class="rpc-drawer hidden">
-        <div class="rpc-header">
-          <strong>Flux JSON-RPC 2.0 en direct</strong>
-          <div class="rpc-actions">
-            <button id="btn-clear-rpc" class="btn-small">Vider</button>
-            <button id="btn-close-rpc" class="btn-small">✕</button>
-          </div>
-        </div>
-        <div id="rpc-log" class="rpc-log"></div>
-        <form id="rpc-custom-form" class="rpc-custom-form">
-          <input id="rpc-custom-input" type="text" placeholder='Envoyer une trame JSON-RPC brute, ex: {"jsonrpc":"2.0","id":99,"method":"thread/list","params":{}}' />
-          <button type="submit" class="btn-small">Envoyer JSON</button>
-        </form>
-      </section>
-    </main>
-  </div>
+                    <div class="form-group">
+                        <label for="peer-mode">Mode d'exécution</label>
+                        <select id="peer-mode" class="input-field">
+                            <option value="auto">Headless CLI (-p) avec repli Tmux</option>
+                            <option value="tmux">Injection directe dans la session Tmux (the_new_user)</option>
+                        </select>
+                    </div>
 
-  <script src="/app.js"></script>
+                    <div class="btn-row">
+                        <button id="btn-peer-capture" class="btn btn-secondary">🖥 Capturer l'écran Tmux</button>
+                    </div>
+
+                    <hr style="border:none;border-top:1px solid var(--border);margin:1.1rem 0;">
+                    <h2>Aperçu Terminal Tmux (<code>the_new_user</code>)</h2>
+                    <pre id="peer-tmux-output" class="terminal-preview">Cliquez sur « Capturer l'écran Tmux » pour afficher la sortie du terminal distant (utile notamment pour récupérer un lien d'authentification OAuth / Remote Control).</pre>
+                </section>
+
+                <section class="card chat-card">
+                    <div class="chat-header">
+                        <span class="badge badge-tier" id="peer-active-label">Agent : Claude Code</span>
+                        <button id="btn-peer-clear" class="btn btn-secondary btn-sm">Effacer</button>
+                    </div>
+
+                    <div id="peer-messages" class="messages-stream"></div>
+
+                    <form id="peer-form" class="composer-bar">
+                        <textarea id="peer-input" class="input-field" placeholder="Envoyer un prompt ou une commande Tmux à Claude / Antigravity..."></textarea>
+                        <button type="submit" class="btn btn-primary">Envoyer ➤</button>
+                    </form>
+                </section>
+            </div>
+        </main>
+
+        <!-- ═══════════════════════════════════════════════ -->
+        <!-- TAB 5: JSON-RPC 2.0 INSPECTOR                   -->
+        <!-- ═══════════════════════════════════════════════ -->
+        <main id="tab-rpc" class="tab-panel">
+            <section class="card chat-card">
+                <div class="chat-header">
+                    <div>
+                        <h2>Inspecteur de trames JSON-RPC 2.0</h2>
+                        <p class="subtitle" style="margin-bottom:0;">Journal temps réel de toutes les trames échangées avec Codex, Goose, Claude et Antigravity.</p>
+                    </div>
+                    <button id="btn-clear-rpc" class="btn btn-secondary btn-sm">Vider le journal</button>
+                </div>
+
+                <div id="rpc-log" class="messages-stream" style="font-family:var(--font-mono);font-size:0.8rem;"></div>
+
+                <form id="rpc-custom-form" class="composer-bar">
+                    <select id="rpc-target-agent" class="input-field" style="max-width:180px;">
+                        <option value="codex">Codex WS</option>
+                        <option value="goose">Goose WS</option>
+                    </select>
+                    <input id="rpc-custom-input" type="text" class="input-field mono" placeholder='{"jsonrpc":"2.0","id":99,"method":"thread/list","params":{}}'>
+                    <button type="submit" class="btn btn-primary">Envoyer JSON brut</button>
+                </form>
+            </section>
+        </main>
+    </div>
+
+    <script src="/app.js"></script>
 </body>
+
 </html>

@@ -1,794 +1,790 @@
 (() => {
-  const state = {
-    activeAgent: "codex", // "codex" | "goose"
-    rpcSeq: 1,
-    pendingRequests: new Map(),
-    pendingApproval: null,
+    const state = {
+        rpcSeq: 1,
+        pendingRequests: new Map(),
+        pendingApproval: { codex: null, goose: null },
 
-    codex: {
-      ws: null,
-      connected: false,
-      activeThreadId: null,
-      threads: [],
-      streamingEl: null,
-      turnRunning: false,
-    },
+        codex: {
+            ws: null,
+            connected: false,
+            activeThreadId: null,
+            threads: [],
+            streamingEl: null,
+            turnRunning: false,
+        },
 
-    goose: {
-      ws: null,
-      connected: false,
-      mode: "ws", // "ws" | "http"
-      activeSessionId: null,
-      sessions: [],
-      streamingEl: null,
-      turnRunning: false,
-    },
-  };
+        goose: {
+            ws: null,
+            connected: false,
+            mode: "ws",
+            activeSessionId: null,
+            sessions: [],
+            streamingEl: null,
+            turnRunning: false,
+        },
+    };
 
-  // DOM Elements
-  const el = {
-    tabCodex: document.getElementById("tab-codex"),
-    tabGoose: document.getElementById("tab-goose"),
-    dotCodex: document.getElementById("dot-codex"),
-    dotGoose: document.getElementById("dot-goose"),
-    configTitle: document.getElementById("config-title"),
-    controlsCodex: document.getElementById("controls-codex"),
-    controlsGoose: document.getElementById("controls-goose"),
-    codexMode: document.getElementById("codex-mode"),
-    codexTarget: document.getElementById("codex-target"),
-    codexCwd: document.getElementById("codex-cwd"),
-    btnCodexConnect: document.getElementById("btn-codex-connect"),
-    btnCodexNew: document.getElementById("btn-codex-new"),
-    gooseMode: document.getElementById("goose-mode"),
-    gooseTarget: document.getElementById("goose-target"),
-    gooseToken: document.getElementById("goose-token"),
-    gooseCwd: document.getElementById("goose-cwd"),
-    btnGooseConnect: document.getElementById("btn-goose-connect"),
-    btnGooseNew: document.getElementById("btn-goose-new"),
-    btnProbe: document.getElementById("btn-probe"),
-    sessionsLabel: document.getElementById("sessions-label"),
-    btnRefreshSessions: document.getElementById("btn-refresh-sessions"),
-    sessionList: document.getElementById("session-list"),
-    connBadge: document.getElementById("conn-badge"),
-    activeSessionDisplay: document.getElementById("active-session-display"),
-    btnInterrupt: document.getElementById("btn-interrupt"),
-    btnClearChat: document.getElementById("btn-clear-chat"),
-    messages: document.getElementById("messages-container"),
-    approvalBanner: document.getElementById("approval-banner"),
-    approvalDetails: document.getElementById("approval-details"),
-    btnApprove: document.getElementById("btn-approve"),
-    btnDecline: document.getElementById("btn-decline"),
-    promptForm: document.getElementById("prompt-form"),
-    promptInput: document.getElementById("prompt-input"),
-    rpcDrawer: document.getElementById("rpc-drawer"),
-    btnToggleRpc: document.getElementById("btn-toggle-rpc"),
-    btnClearRpc: document.getElementById("btn-clear-rpc"),
-    btnCloseRpc: document.getElementById("btn-close-rpc"),
-    rpcLog: document.getElementById("rpc-log"),
-    rpcCustomForm: document.getElementById("rpc-custom-form"),
-    rpcCustomInput: document.getElementById("rpc-custom-input"),
-  };
+    const $ = (id) => document.getElementById(id);
 
-  function nextId() {
-    return state.rpcSeq++;
-  }
-
-  function wsBaseUrl() {
-    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    return `${proto}//${window.location.host}`;
-  }
-
-  function logRpc(direction, payload) {
-    const div = document.createElement("div");
-    div.className = `rpc-entry ${direction}`;
-    const prefix = direction === "out" ? "→ OUT " : "← IN  ";
-    div.textContent = prefix + (typeof payload === "string" ? payload : JSON.stringify(payload));
-    el.rpcLog.appendChild(div);
-    el.rpcLog.scrollTop = el.rpcLog.scrollHeight;
-  }
-
-  function appendMessage(role, title, text) {
-    const welcome = el.messages.querySelector(".welcome-card");
-    if (welcome) welcome.remove();
-
-    const wrapper = document.createElement("div");
-    wrapper.className = `msg msg-${role}`;
-
-    const header = document.createElement("div");
-    header.className = "msg-header";
-    header.innerHTML = `<span>${escapeHtml(title)}</span><span>${new Date().toLocaleTimeString()}</span>`;
-
-    const body = document.createElement("div");
-    body.className = "msg-body";
-    body.textContent = text;
-
-    wrapper.appendChild(header);
-    wrapper.appendChild(body);
-    el.messages.appendChild(wrapper);
-    el.messages.scrollTop = el.messages.scrollHeight;
-    return body;
-  }
-
-  function getOrCreateStreamingBubble(agentKey, label) {
-    const agentState = state[agentKey];
-    if (!agentState.streamingEl) {
-      agentState.streamingEl = appendMessage("agent", label, "");
-    }
-    return agentState.streamingEl;
-  }
-
-  function escapeHtml(str) {
-    return String(str)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
-  }
-
-  function updateHeaderUI() {
-    const isCodex = state.activeAgent === "codex";
-    const current = isCodex ? state.codex : state.goose;
-
-    if (current.connected) {
-      el.connBadge.textContent = `Connecté (${isCodex ? "Codex" : "Goose"})`;
-      el.connBadge.classList.add("connected");
-    } else {
-      el.connBadge.textContent = "Déconnecté";
-      el.connBadge.classList.remove("connected");
+    function nextId() {
+        return state.rpcSeq++;
     }
 
-    const activeId = isCodex ? state.codex.activeThreadId : state.goose.activeSessionId;
-    el.activeSessionDisplay.textContent = activeId
-      ? `${isCodex ? "Thread" : "Session"}: ${activeId}`
-      : "Aucune session active";
-
-    if (current.turnRunning) {
-      el.btnInterrupt.classList.remove("hidden");
-    } else {
-      el.btnInterrupt.classList.add("hidden");
+    function wsBaseUrl() {
+        const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+        return `${proto}//${window.location.host}`;
     }
 
-    renderSessionsList();
-  }
+    function escapeHtml(str) {
+        return String(str)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;");
+    }
 
-  function renderSessionsList() {
-    el.sessionList.innerHTML = "";
-    if (state.activeAgent === "codex") {
-      const threads = state.codex.threads;
-      if (!threads.length) {
-        el.sessionList.innerHTML = `<div class="empty-hint">Aucun thread Codex</div>`;
-        return;
-      }
-      threads.forEach((t) => {
-        const id = t.id || t.threadId || String(t);
-        const preview = t.preview || t.title || t.cwd || "Thread Codex";
+    function logRpc(direction, agent, payload) {
+        const log = $("rpc-log");
+        if (!log) return;
         const div = document.createElement("div");
-        div.className = `session-item ${state.codex.activeThreadId === id ? "active" : ""}`;
-        div.innerHTML = `
-          <span class="session-item-id">${escapeHtml(id)}</span>
-          <span class="session-item-preview">${escapeHtml(preview)}</span>
-        `;
-        div.addEventListener("click", () => resumeCodexThread(id));
-        el.sessionList.appendChild(div);
-      });
-    } else {
-      const sessions = state.goose.sessions;
-      if (!sessions.length) {
-        el.sessionList.innerHTML = `<div class="empty-hint">Aucune session Goose</div>`;
-        return;
-      }
-      sessions.forEach((s) => {
-        const id = s.id || s.sessionId || String(s);
-        const preview = s.description || s.cwd || "Session Goose ACP";
-        const div = document.createElement("div");
-        div.className = `session-item ${state.goose.activeSessionId === id ? "active" : ""}`;
-        div.innerHTML = `
-          <span class="session-item-id">${escapeHtml(id)}</span>
-          <span class="session-item-preview">${escapeHtml(preview)}</span>
-        `;
-        div.addEventListener("click", () => loadGooseSession(id));
-        el.sessionList.appendChild(div);
-      });
+        div.className = `msg ${direction === "out" ? "msg-user" : "msg-tool"}`;
+        div.style.maxWidth = "100%";
+        div.style.padding = "0.45rem 0.75rem";
+        const raw = typeof payload === "string" ? payload : JSON.stringify(payload);
+        div.textContent = `[${new Date().toLocaleTimeString()}] [${agent.toUpperCase()}] ${direction === "out" ? "→ OUT" : "← IN "} ${raw}`;
+        log.appendChild(div);
+        log.scrollTop = log.scrollHeight;
     }
-  }
 
-  // =========================================================================
-  // CODEX APP-SERVER CLIENT (JSON-RPC 2.0 over WS or Unix Socket)
-  // =========================================================================
-  function sendCodexRpc(method, params = {}, isNotification = false) {
-    if (!state.codex.ws || state.codex.ws.readyState !== WebSocket.OPEN) {
-      appendMessage("system", "Codex", "WebSocket Codex non connecté.");
-      return Promise.reject(new Error("Codex socket not open"));
-    }
-    const msg = { jsonrpc: "2.0", method, params };
-    if (!isNotification) {
-      msg.id = nextId();
-    }
-    const raw = JSON.stringify(msg);
-    logRpc("out", msg);
-    state.codex.ws.send(raw);
+    function appendMsg(containerId, role, sender, text) {
+        const container = $(containerId);
+        if (!container) return null;
 
-    if (isNotification) return Promise.resolve();
-    return new Promise((resolve, reject) => {
-      state.pendingRequests.set(msg.id, { resolve, reject, agent: "codex", method });
+        const wrapper = document.createElement("div");
+        wrapper.className = `msg msg-${role}`;
+
+        const header = document.createElement("div");
+        header.className = "msg-header";
+        header.innerHTML = `<span>${escapeHtml(sender)}</span><span>${new Date().toLocaleTimeString()}</span>`;
+
+        const body = document.createElement("div");
+        body.className = "msg-body";
+        body.textContent = text;
+
+        wrapper.appendChild(header);
+        wrapper.appendChild(body);
+        container.appendChild(wrapper);
+        container.scrollTop = container.scrollHeight;
+        return body;
+    }
+
+    // ─── Tab Navigation (simply_ip_vault pattern) ────────────────────────────
+    document.querySelectorAll(".tab-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+            const target = btn.getAttribute("data-tab");
+            document.querySelectorAll(".tab-btn").forEach((b) => {
+                b.classList.toggle("active", b === btn);
+                b.setAttribute("aria-selected", b === btn ? "true" : "false");
+            });
+            document.querySelectorAll(".tab-panel").forEach((panel) => {
+                panel.classList.toggle("active", panel.id === `tab-${target}`);
+            });
+        });
     });
-  }
 
-  function connectCodex() {
-    if (state.codex.ws) {
-      state.codex.ws.close();
-    }
-    const mode = el.codexMode.value;
-    const target = el.codexTarget.value.trim();
-    const params = new URLSearchParams({ mode });
-    if (target) params.set("target", target);
+    // ═════════════════════════════════════════════════════════════════════════
+    // 1. CODEX APP-SERVER (JSON-RPC 2.0 over WS or Unix Socket)
+    // ═════════════════════════════════════════════════════════════════════════
+    function updateCodexUI() {
+        const badge = $("codex-conn-badge");
+        badge.textContent = state.codex.connected ? "Connecté (Codex)" : "Déconnecté";
+        badge.className = `badge ${state.codex.connected ? "badge-online" : "badge-offline"}`;
 
-    const url = `${wsBaseUrl()}/ws/codex?${params.toString()}`;
-    appendMessage("system", "Codex", `Connexion au pont Rust (${mode})...`);
+        $("codex-active-thread").textContent = state.codex.activeThreadId
+            ? `Thread : ${state.codex.activeThreadId}`
+            : "Aucun thread";
 
-    const ws = new WebSocket(url);
-    state.codex.ws = ws;
+        $("btn-codex-interrupt").classList.toggle("hidden", !state.codex.turnRunning);
 
-    ws.onopen = async () => {
-      state.codex.connected = true;
-      updateHeaderUI();
-      try {
-        await sendCodexRpc("initialize", {
-          clientInfo: { name: "agent-hub", version: "1.0.0" },
-          capabilities: {},
+        const listEl = $("codex-thread-list");
+        listEl.innerHTML = "";
+        if (!state.codex.threads.length) {
+            listEl.innerHTML = `<div class="field-hint">Aucun thread actif</div>`;
+            return;
+        }
+        state.codex.threads.forEach((t) => {
+            const id = t.id || t.threadId || String(t);
+            const preview = t.preview || t.title || t.cwd || "Thread Codex";
+            const item = document.createElement("div");
+            item.className = `session-item ${state.codex.activeThreadId === id ? "active" : ""}`;
+            item.innerHTML = `
+                <span class="session-item-id">${escapeHtml(id)}</span>
+                <span class="session-item-preview">${escapeHtml(preview)}</span>
+            `;
+            item.addEventListener("click", () => resumeCodexThread(id));
+            listEl.appendChild(item);
         });
-        await sendCodexRpc("initialized", {}, true);
-        appendMessage("system", "Codex", "Handshake JSON-RPC initialize/initialized réussi.");
-        refreshCodexThreads();
-      } catch (err) {
-        appendMessage("system", "Erreur Codex", String(err.message || err));
-      }
-    };
+    }
 
-    ws.onmessage = (ev) => {
-      let msg;
-      try {
-        msg = JSON.parse(ev.data);
-      } catch {
-        logRpc("in", ev.data);
-        return;
-      }
-      logRpc("in", msg);
-      handleCodexFrame(msg);
-    };
-
-    ws.onclose = () => {
-      state.codex.connected = false;
-      state.codex.turnRunning = false;
-      updateHeaderUI();
-      appendMessage("system", "Codex", "Connexion fermée.");
-    };
-
-    ws.onerror = () => {
-      appendMessage("system", "Erreur Codex", "Erreur sur le flux WebSocket.");
-    };
-  }
-
-  function handleCodexFrame(msg) {
-    // 1. Response to our request
-    if (msg.id !== undefined && (msg.result !== undefined || msg.error !== undefined)) {
-      const pending = state.pendingRequests.get(msg.id);
-      if (pending) {
-        state.pendingRequests.delete(msg.id);
-        if (msg.error) {
-          pending.reject(new Error(msg.error.message || JSON.stringify(msg.error)));
-        } else {
-          pending.resolve(msg.result);
+    function sendCodexRpc(method, params = {}, isNotification = false) {
+        if (!state.codex.ws || state.codex.ws.readyState !== WebSocket.OPEN) {
+            appendMsg("codex-messages", "system", "Codex", "WebSocket Codex non connecté.");
+            return Promise.reject(new Error("Codex socket not open"));
         }
-      }
-      return;
+        const msg = { jsonrpc: "2.0", method, params };
+        if (!isNotification) msg.id = nextId();
+        logRpc("out", "codex", msg);
+        state.codex.ws.send(JSON.stringify(msg));
+        if (isNotification) return Promise.resolve();
+        return new Promise((resolve, reject) => {
+            state.pendingRequests.set(msg.id, { resolve, reject });
+        });
     }
 
-    // 2. Server-initiated JSON-RPC Request (e.g. Approval request)
-    if (msg.id !== undefined && msg.method) {
-      showApprovalModal("codex", msg.id, msg.method, msg.params);
-      return;
+    function connectCodex() {
+        if (state.codex.ws) state.codex.ws.close();
+        const mode = $("codex-mode").value;
+        const target = $("codex-target").value.trim();
+        const params = new URLSearchParams({ mode });
+        if (target) params.set("target", target);
+
+        appendMsg("codex-messages", "system", "Codex", `Connexion au pont Rust (${mode})...`);
+        const ws = new WebSocket(`${wsBaseUrl()}/ws/codex?${params.toString()}`);
+        state.codex.ws = ws;
+
+        ws.onopen = async () => {
+            state.codex.connected = true;
+            updateCodexUI();
+            try {
+                await sendCodexRpc("initialize", {
+                    clientInfo: { name: "simply-agent-hub", version: "1.0.0" },
+                    capabilities: {},
+                });
+                await sendCodexRpc("initialized", {}, true);
+                appendMsg("codex-messages", "system", "Codex", "Handshake initialize/initialized réussi.");
+                await refreshCodexThreads();
+            } catch (err) {
+                appendMsg("codex-messages", "system", "Erreur Codex", err.message);
+            }
+        };
+
+        ws.onmessage = (ev) => {
+            let msg;
+            try {
+                msg = JSON.parse(ev.data);
+            } catch {
+                logRpc("in", "codex", ev.data);
+                return;
+            }
+            logRpc("in", "codex", msg);
+            handleCodexFrame(msg);
+        };
+
+        ws.onclose = () => {
+            state.codex.connected = false;
+            state.codex.turnRunning = false;
+            updateCodexUI();
+            appendMsg("codex-messages", "system", "Codex", "Connexion fermée.");
+        };
     }
 
-    // 3. Server Notification
-    const method = msg.method || "";
-    const params = msg.params || {};
-
-    if (method === "turn/started") {
-      state.codex.turnRunning = true;
-      state.codex.streamingEl = null;
-      updateHeaderUI();
-    } else if (method === "turn/completed") {
-      state.codex.turnRunning = false;
-      state.codex.streamingEl = null;
-      updateHeaderUI();
-    } else if (method === "item/agentMessage/delta") {
-      const bubble = getOrCreateStreamingBubble("codex", "Codex");
-      bubble.textContent += params.delta || "";
-      el.messages.scrollTop = el.messages.scrollHeight;
-    } else if (
-      method === "item/reasoning/summaryTextDelta" ||
-      method === "item/reasoning/textDelta"
-    ) {
-      const bubble = getOrCreateStreamingBubble("codex", "Codex (Raisonnement)");
-      bubble.textContent += params.delta || "";
-      el.messages.scrollTop = el.messages.scrollHeight;
-    } else if (method === "item/started") {
-      const item = params.item || {};
-      if (item.type === "commandExecution") {
-        appendMessage("tool", "Codex Tool • Commande", `$ ${item.command || JSON.stringify(item)}`);
-      } else if (item.type === "fileChange") {
-        appendMessage("tool", "Codex Tool • Modification fichier", JSON.stringify(item.changes || item, null, 2));
-      }
-    } else if (method === "error" || method === " bridge/error") {
-      appendMessage("system", "Codex", params.message || JSON.stringify(params));
-    }
-  }
-
-  async function refreshCodexThreads() {
-    if (!state.codex.connected) return;
-    try {
-      const res = await sendCodexRpc("thread/list", {});
-      const list = res?.data || res?.threads || (Array.isArray(res) ? res : []);
-      state.codex.threads = list;
-      if (!state.codex.activeThreadId && list.length > 0) {
-        state.codex.activeThreadId = list[0].id || list[0].threadId;
-      }
-      updateHeaderUI();
-    } catch (err) {
-      appendMessage("system", "Codex", `Impossible de lister les threads: ${err.message}`);
-    }
-  }
-
-  async function startNewCodexThread() {
-    if (!state.codex.connected) {
-      appendMessage("system", "Codex", "Connectez-vous d'abord à Codex.");
-      return null;
-    }
-    const cwd = el.codexCwd.value.trim() || "/srv";
-    try {
-      const res = await sendCodexRpc("thread/start", { cwd });
-      const id = res?.thread?.id || res?.threadId || res?.id;
-      if (id) {
-        state.codex.activeThreadId = id;
-        if (!state.codex.threads.find((t) => (t.id || t.threadId) === id)) {
-          state.codex.threads.unshift({ id, cwd, preview: `Nouveau thread (${cwd})` });
+    function handleCodexFrame(msg) {
+        if (msg.id !== undefined && (msg.result !== undefined || msg.error !== undefined)) {
+            const pending = state.pendingRequests.get(msg.id);
+            if (pending) {
+                state.pendingRequests.delete(msg.id);
+                if (msg.error) pending.reject(new Error(msg.error.message || JSON.stringify(msg.error)));
+                else pending.resolve(msg.result);
+            }
+            return;
         }
-        updateHeaderUI();
-        appendMessage("system", "Codex", `Nouveau thread démarré : ${id}`);
-      }
-      return id;
-    } catch (err) {
-      appendMessage("system", "Erreur Codex", `Échec thread/start: ${err.message}`);
-      return null;
-    }
-  }
 
-  async function resumeCodexThread(threadId) {
-    state.codex.activeThreadId = threadId;
-    updateHeaderUI();
-    if (!state.codex.connected) return;
-    try {
-      await sendCodexRpc("thread/resume", { threadId });
-      appendMessage("system", "Codex", `Thread repris : ${threadId}`);
-    } catch (err) {
-      appendMessage("system", "Codex", `Sélection du thread ${threadId} (${err.message})`);
-    }
-  }
+        if (msg.id !== undefined && msg.method) {
+            state.pendingApproval.codex = msg;
+            $("codex-approval-details").textContent = `${msg.method}\n${JSON.stringify(msg.params, null, 2)}`;
+            $("codex-approval-banner").classList.remove("hidden");
+            return;
+        }
 
-  // =========================================================================
-  // GOOSE SERVE ACP CLIENT (JSON-RPC 2.0 over WebSocket or HTTP)
-  // =========================================================================
-  async function sendGooseRpc(method, params = {}, isNotification = false) {
-    const mode = el.gooseMode.value;
-    const msg = { jsonrpc: "2.0", method, params };
-    if (!isNotification) {
-      msg.id = nextId();
-    }
-    logRpc("out", msg);
+        const method = msg.method || "";
+        const params = msg.params || {};
 
-    if (mode === "http") {
-      const headers = { "Content-Type": "application/json" };
-      const token = el.gooseToken.value.trim();
-      if (token) headers["X-Secret-Key"] = token;
-
-      const resp = await fetch("/api/goose/acp", {
-        method: "POST",
-        headers,
-        body: JSON.stringify(msg),
-      });
-      const data = await resp.json();
-      logRpc("in", data);
-      handleGooseFrame(data);
-      if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
-      return data.result;
+        if (method === "turn/started") {
+            state.codex.turnRunning = true;
+            state.codex.streamingEl = null;
+            updateCodexUI();
+        } else if (method === "turn/completed") {
+            const finalReply = state.codex.streamingEl ? state.codex.streamingEl.textContent : "";
+            state.codex.turnRunning = false;
+            state.codex.streamingEl = null;
+            updateCodexUI();
+            if (finalReply) checkAndForwardMentions("codex", finalReply, "codex-messages");
+        } else if (method === "item/agentMessage/delta") {
+            if (!state.codex.streamingEl) {
+                state.codex.streamingEl = appendMsg("codex-messages", "agent", "Codex", "");
+            }
+            state.codex.streamingEl.textContent += params.delta || "";
+            $("codex-messages").scrollTop = $("codex-messages").scrollHeight;
+        } else if (method === "item/started") {
+            const item = params.item || {};
+            if (item.type === "commandExecution") {
+                appendMsg("codex-messages", "tool", "Codex Outil • Commande", `$ ${item.command || JSON.stringify(item)}`);
+            } else if (item.type === "fileChange") {
+                appendMsg("codex-messages", "tool", "Codex Outil • Fichier", JSON.stringify(item.changes || item, null, 2));
+            }
+        } else if (method === "bridge/error" || method === "error") {
+            appendMsg("codex-messages", "system", "Erreur Codex", params.message || JSON.stringify(params));
+        }
     }
 
-    if (!state.goose.ws || state.goose.ws.readyState !== WebSocket.OPEN) {
-      appendMessage("system", "Goose", "WebSocket Goose non connecté.");
-      throw new Error("Goose WebSocket not open");
+    async function refreshCodexThreads() {
+        if (!state.codex.connected) return;
+        try {
+            const res = await sendCodexRpc("thread/list", {});
+            const list = res?.data || res?.threads || (Array.isArray(res) ? res : []);
+            state.codex.threads = list;
+            if (!state.codex.activeThreadId && list.length > 0) {
+                state.codex.activeThreadId = list[0].id || list[0].threadId;
+            }
+            updateCodexUI();
+        } catch (err) {
+            appendMsg("codex-messages", "system", "Codex", `Impossible de lister les threads: ${err.message}`);
+        }
     }
-    state.goose.ws.send(JSON.stringify(msg));
-    if (isNotification) return;
-    return new Promise((resolve, reject) => {
-      state.pendingRequests.set(msg.id, { resolve, reject, agent: "goose", method });
+
+    async function startNewCodexThread() {
+        if (!state.codex.connected) {
+            appendMsg("codex-messages", "system", "Codex", "Connectez-vous d'abord à Codex.");
+            return null;
+        }
+        const cwd = $("codex-cwd").value.trim() || "/srv";
+        try {
+            const res = await sendCodexRpc("thread/start", { cwd });
+            const id = res?.thread?.id || res?.threadId || res?.id;
+            if (id) {
+                state.codex.activeThreadId = id;
+                state.codex.threads.unshift({ id, cwd, preview: `Thread (${cwd})` });
+                updateCodexUI();
+                appendMsg("codex-messages", "system", "Codex", `Nouveau thread créé : ${id}`);
+            }
+            return id;
+        } catch (err) {
+            appendMsg("codex-messages", "system", "Erreur Codex", err.message);
+            return null;
+        }
+    }
+
+    async function resumeCodexThread(threadId) {
+        state.codex.activeThreadId = threadId;
+        updateCodexUI();
+        if (!state.codex.connected) return;
+        try {
+            await sendCodexRpc("thread/resume", { threadId });
+            appendMsg("codex-messages", "system", "Codex", `Thread actif : ${threadId}`);
+        } catch {
+            appendMsg("codex-messages", "system", "Codex", `Thread sélectionné : ${threadId}`);
+        }
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // 2. GOOSE ACP (JSON-RPC 2.0 over WebSocket or HTTP)
+    // ═════════════════════════════════════════════════════════════════════════
+    function updateGooseUI() {
+        const badge = $("goose-conn-badge");
+        badge.textContent = state.goose.connected ? "Connecté (Goose ACP)" : "Déconnecté";
+        badge.className = `badge ${state.goose.connected ? "badge-online" : "badge-offline"}`;
+
+        $("goose-active-session").textContent = state.goose.activeSessionId
+            ? `Session : ${state.goose.activeSessionId}`
+            : "Aucune session";
+
+        $("btn-goose-cancel").classList.toggle("hidden", !state.goose.turnRunning);
+
+        const listEl = $("goose-session-list");
+        listEl.innerHTML = "";
+        if (!state.goose.sessions.length) {
+            listEl.innerHTML = `<div class="field-hint">Aucune session active</div>`;
+            return;
+        }
+        state.goose.sessions.forEach((s) => {
+            const id = s.id || s.sessionId;
+            const item = document.createElement("div");
+            item.className = `session-item ${state.goose.activeSessionId === id ? "active" : ""}`;
+            item.innerHTML = `
+                <span class="session-item-id">${escapeHtml(id)}</span>
+                <span class="session-item-preview">${escapeHtml(s.cwd || "/srv")}</span>
+            `;
+            item.addEventListener("click", () => {
+                state.goose.activeSessionId = id;
+                updateGooseUI();
+            });
+            listEl.appendChild(item);
+        });
+    }
+
+    async function sendGooseRpc(method, params = {}, isNotification = false) {
+        const mode = $("goose-mode").value;
+        const msg = { jsonrpc: "2.0", method, params };
+        if (!isNotification) msg.id = nextId();
+        logRpc("out", "goose", msg);
+
+        if (mode === "http") {
+            const headers = { "Content-Type": "application/json" };
+            const token = $("goose-token").value.trim();
+            if (token) headers["X-Secret-Key"] = token;
+            const resp = await fetch("/api/goose/acp", {
+                method: "POST",
+                headers,
+                body: JSON.stringify(msg),
+            });
+            const data = await resp.json();
+            logRpc("in", "goose", data);
+            handleGooseFrame(data);
+            if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+            return data.result;
+        }
+
+        if (!state.goose.ws || state.goose.ws.readyState !== WebSocket.OPEN) {
+            throw new Error("WebSocket Goose non connecté");
+        }
+        state.goose.ws.send(JSON.stringify(msg));
+        if (isNotification) return;
+        return new Promise((resolve, reject) => {
+            state.pendingRequests.set(msg.id, { resolve, reject });
+        });
+    }
+
+    async function connectGoose() {
+        const mode = $("goose-mode").value;
+        if (mode === "http") {
+            try {
+                state.goose.connected = true;
+                updateGooseUI();
+                await sendGooseRpc("initialize", {
+                    protocolVersion: 1,
+                    clientCapabilities: { fs: { readTextFile: true, writeTextFile: true }, terminal: true },
+                    clientInfo: { name: "simply-agent-hub", version: "1.0.0" },
+                });
+                appendMsg("goose-messages", "system", "Goose", "Connecté via HTTP JSON-RPC (/api/goose/acp).");
+                await startNewGooseSession();
+            } catch (err) {
+                state.goose.connected = false;
+                updateGooseUI();
+                appendMsg("goose-messages", "system", "Erreur Goose", err.message);
+            }
+            return;
+        }
+
+        if (state.goose.ws) state.goose.ws.close();
+        const target = $("goose-target").value.trim();
+        const token = $("goose-token").value.trim();
+        const params = new URLSearchParams();
+        if (target) params.set("target", target);
+        if (token) params.set("token", token);
+
+        appendMsg("goose-messages", "system", "Goose", "Connexion au pont WebSocket ACP Goose...");
+        const ws = new WebSocket(`${wsBaseUrl()}/ws/goose?${params.toString()}`);
+        state.goose.ws = ws;
+
+        ws.onopen = async () => {
+            state.goose.connected = true;
+            updateGooseUI();
+            try {
+                await sendGooseRpc("initialize", {
+                    protocolVersion: 1,
+                    clientCapabilities: { fs: { readTextFile: true, writeTextFile: true }, terminal: true },
+                    clientInfo: { name: "simply-agent-hub", version: "1.0.0" },
+                });
+                appendMsg("goose-messages", "system", "Goose", "Handshake ACP initialize réussi.");
+                if (!state.goose.activeSessionId) await startNewGooseSession();
+            } catch (err) {
+                appendMsg("goose-messages", "system", "Erreur Goose", err.message);
+            }
+        };
+
+        ws.onmessage = (ev) => {
+            let msg;
+            try {
+                msg = JSON.parse(ev.data);
+            } catch {
+                logRpc("in", "goose", ev.data);
+                return;
+            }
+            logRpc("in", "goose", msg);
+            handleGooseFrame(msg);
+        };
+
+        ws.onclose = () => {
+            state.goose.connected = false;
+            state.goose.turnRunning = false;
+            updateGooseUI();
+            appendMsg("goose-messages", "system", "Goose", "Connexion WebSocket Goose fermée.");
+        };
+    }
+
+    function handleGooseFrame(msg) {
+        if (msg.id !== undefined && (msg.result !== undefined || msg.error !== undefined)) {
+            const pending = state.pendingRequests.get(msg.id);
+            if (pending) {
+                state.pendingRequests.delete(msg.id);
+                if (msg.error) pending.reject(new Error(msg.error.message || JSON.stringify(msg.error)));
+                else pending.resolve(msg.result);
+            }
+            return;
+        }
+
+        if (msg.id !== undefined && msg.method) {
+            state.pendingApproval.goose = msg;
+            $("goose-approval-details").textContent = `${msg.method}\n${JSON.stringify(msg.params, null, 2)}`;
+            $("goose-approval-banner").classList.remove("hidden");
+            return;
+        }
+
+        if (msg.method === "session/update") {
+            const update = msg.params?.update || {};
+            if (update.sessionUpdate === "agent_message_chunk") {
+                if (!state.goose.streamingEl) {
+                    state.goose.streamingEl = appendMsg("goose-messages", "agent", "Goose", "");
+                }
+                state.goose.streamingEl.textContent += update.content?.text || "";
+                $("goose-messages").scrollTop = $("goose-messages").scrollHeight;
+            } else if (update.sessionUpdate === "tool_call") {
+                appendMsg("goose-messages", "tool", `Goose Outil • ${update.title || "Tool"}`, JSON.stringify(update, null, 2));
+            }
+        } else if (msg.method === "bridge/error") {
+            appendMsg("goose-messages", "system", "Erreur Goose", msg.params?.message || "");
+        }
+    }
+
+    async function startNewGooseSession() {
+        const cwd = $("goose-cwd").value.trim() || "/srv";
+        try {
+            const res = await sendGooseRpc("session/new", { cwd, mcpServers: [] });
+            const id = res?.sessionId || res?.id;
+            if (id) {
+                state.goose.activeSessionId = id;
+                state.goose.sessions.unshift({ id, cwd });
+                updateGooseUI();
+                appendMsg("goose-messages", "system", "Goose", `Session ACP créée : ${id}`);
+            }
+            return id;
+        } catch (err) {
+            appendMsg("goose-messages", "system", "Erreur Goose", err.message);
+            return null;
+        }
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // 3. INTER-AGENT BRIDGE & ORCHESTRATION (Codex <-> Goose <-> Claude <-> Antigravity)
+    // ═════════════════════════════════════════════════════════════════════════
+    async function askSingleAgentViaBackend(agent, prompt, cwd = "/srv", mode = "auto") {
+        logRpc("out", `bridge->${agent}`, { agent, prompt, cwd, mode });
+        const resp = await fetch("/api/agents/ask", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ agent, prompt, cwd, mode }),
+        });
+        const data = await resp.json();
+        logRpc("in", `bridge<-${agent}`, data);
+        if (data.error) throw new Error(data.error);
+        return data.reply || "";
+    }
+
+    async function checkAndForwardMentions(sourceAgent, replyText, containerId) {
+        const autoMention = $("bridge-auto-mention");
+        if (autoMention && !autoMention.checked) return;
+
+        const regex = /@(codex|goose|claude|antigravity)\b\s*[:,-]?\s*(.+)/gi;
+        let match;
+        while ((match = regex.exec(replyText)) !== null) {
+            const targetAgent = match[1].toLowerCase();
+            const subPrompt = match[2].trim();
+            if (!subPrompt || targetAgent === sourceAgent) continue;
+
+            appendMsg(
+                containerId,
+                "system",
+                "Pont Inter-Agents",
+                `Relais automatique de ${sourceAgent.toUpperCase()} vers @${targetAgent.toUpperCase()} : « ${subPrompt} »`
+            );
+            try {
+                const subReply = await askSingleAgentViaBackend(targetAgent, subPrompt, "/srv");
+                appendMsg(containerId, "agent", `${targetAgent.toUpperCase()} (via Pont Inter-Agents)`, subReply);
+            } catch (err) {
+                appendMsg(containerId, "system", `Erreur @${targetAgent}`, err.message);
+            }
+        }
+    }
+
+    $("bridge-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const initialPrompt = $("bridge-input").value.trim();
+        if (!initialPrompt) return;
+        $("bridge-input").value = "";
+
+        const steps = [
+            $("bridge-step-1").value,
+            $("bridge-step-2").value,
+            $("bridge-step-3").value,
+        ].filter(Boolean);
+
+        const cwd = $("bridge-cwd").value.trim() || "/srv";
+        const badge = $("bridge-status-badge");
+        badge.textContent = "Orchestration en cours...";
+
+        appendMsg("bridge-messages", "user", `Mission (${steps.join(" → ")})`, initialPrompt);
+
+        let accumulatedContext = `Objectif initial de l'utilisateur :\n${initialPrompt}\n`;
+
+        for (let i = 0; i < steps.length; i++) {
+            const agent = steps[i];
+            badge.textContent = `Étape ${i + 1}/${steps.length} : ${agent.toUpperCase()}...`;
+
+            const stepPrompt =
+                i === 0
+                    ? initialPrompt
+                    : `${accumulatedContext}\n---\nEn tant qu'agent ${agent.toUpperCase()} (étape ${i + 1}/${steps.length}), poursuis le travail, vérifie ou complète la réponse précédente :`;
+
+            try {
+                const reply = await askSingleAgentViaBackend(agent, stepPrompt, cwd);
+                appendMsg("bridge-messages", "agent", `Étape ${i + 1} • ${agent.toUpperCase()}`, reply);
+                accumulatedContext += `\n[Réponse de ${agent.toUpperCase()}] :\n${reply}\n`;
+                await checkAndForwardMentions(agent, reply, "bridge-messages");
+            } catch (err) {
+                appendMsg("bridge-messages", "system", `Erreur (${agent.toUpperCase()})`, err.message);
+                break;
+            }
+        }
+
+        badge.textContent = "Prêt";
     });
-  }
 
-  async function connectGoose() {
-    const mode = el.gooseMode.value;
-    state.goose.mode = mode;
+    // ═════════════════════════════════════════════════════════════════════════
+    // 4. CLAUDE & ANTIGRAVITY DIRECT BRIDGE & TMUX CAPTURE
+    // ═════════════════════════════════════════════════════════════════════════
+    $("peer-agent").addEventListener("change", () => {
+        const ag = $("peer-agent").value;
+        $("peer-active-label").textContent = `Agent : ${ag === "claude" ? "Claude Code" : "Antigravity CLI"}`;
+    });
 
-    if (mode === "http") {
-      try {
-        state.goose.connected = true;
-        updateHeaderUI();
-        await sendGooseRpc("initialize", {
-          protocolVersion: 1,
-          clientCapabilities: {
-            fs: { readTextFile: true, writeTextFile: true },
-            terminal: true,
-          },
-          clientInfo: { name: "agent-hub", version: "1.0.0" },
-        });
-        appendMessage("system", "Goose", "Connecté à Goose via HTTP JSON-RPC (/api/goose/acp).");
-        await startNewGooseSession();
-      } catch (err) {
-        state.goose.connected = false;
-        updateHeaderUI();
-        appendMessage("system", "Erreur Goose HTTP", err.message);
-      }
-      return;
-    }
-
-    if (state.goose.ws) {
-      state.goose.ws.close();
-    }
-    const target = el.gooseTarget.value.trim();
-    const token = el.gooseToken.value.trim();
-    const params = new URLSearchParams();
-    if (target) params.set("target", target);
-    if (token) params.set("token", token);
-
-    const url = `${wsBaseUrl()}/ws/goose?${params.toString()}`;
-    appendMessage("system", "Goose", "Connexion au pont WebSocket ACP Goose...");
-
-    const ws = new WebSocket(url);
-    state.goose.ws = ws;
-
-    ws.onopen = async () => {
-      state.goose.connected = true;
-      updateHeaderUI();
-      try {
-        await sendGooseRpc("initialize", {
-          protocolVersion: 1,
-          clientCapabilities: {
-            fs: { readTextFile: true, writeTextFile: true },
-            terminal: true,
-          },
-          clientInfo: { name: "agent-hub", version: "1.0.0" },
-        });
-        appendMessage("system", "Goose", "Handshake ACP initialize réussi.");
-        if (!state.goose.activeSessionId) {
-          await startNewGooseSession();
+    $("btn-peer-capture").addEventListener("click", async () => {
+        const agent = $("peer-agent").value;
+        $("peer-tmux-output").textContent = `Capture de la session tmux de ${agent}...`;
+        try {
+            const resp = await fetch("/api/agents/tmux", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ agent, lines: 120 }),
+            });
+            const data = await resp.json();
+            if (data.error) throw new Error(data.error);
+            $("peer-tmux-output").textContent = data.output || "(Aucune sortie dans le panneau tmux)";
+        } catch (err) {
+            $("peer-tmux-output").textContent = `Erreur capture tmux (${agent}): ${err.message}`;
         }
-      } catch (err) {
-        appendMessage("system", "Erreur Goose", String(err.message || err));
-      }
-    };
+    });
 
-    ws.onmessage = (ev) => {
-      let msg;
-      try {
-        msg = JSON.parse(ev.data);
-      } catch {
-        logRpc("in", ev.data);
-        return;
-      }
-      logRpc("in", msg);
-      handleGooseFrame(msg);
-    };
+    $("peer-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const text = $("peer-input").value.trim();
+        if (!text) return;
+        $("peer-input").value = "";
 
-    ws.onclose = () => {
-      state.goose.connected = false;
-      state.goose.turnRunning = false;
-      updateHeaderUI();
-      appendMessage("system", "Goose", "Connexion WebSocket Goose fermée.");
-    };
-  }
+        const agent = $("peer-agent").value;
+        const mode = $("peer-mode").value;
+        appendMsg("peer-messages", "user", "Vous", text);
 
-  function handleGooseFrame(msg) {
-    if (msg.id !== undefined && (msg.result !== undefined || msg.error !== undefined)) {
-      const pending = state.pendingRequests.get(msg.id);
-      if (pending) {
-        state.pendingRequests.delete(msg.id);
-        if (msg.error) {
-          pending.reject(new Error(msg.error.message || JSON.stringify(msg.error)));
-        } else {
-          pending.resolve(msg.result);
+        try {
+            const reply = await askSingleAgentViaBackend(agent, text, "/srv", mode);
+            appendMsg("peer-messages", "agent", agent.toUpperCase(), reply);
+            if (mode === "tmux") {
+                $("peer-tmux-output").textContent = reply;
+            }
+        } catch (err) {
+            appendMsg("peer-messages", "system", `Erreur ${agent}`, err.message);
         }
-      }
-      return;
-    }
+    });
 
-    if (msg.id !== undefined && msg.method) {
-      showApprovalModal("goose", msg.id, msg.method, msg.params);
-      return;
-    }
-
-    const method = msg.method || "";
-    const params = msg.params || {};
-
-    if (method === "session/update") {
-      const update = params.update || {};
-      const kind = update.sessionUpdate;
-      if (kind === "agent_message_chunk") {
-        const text = update.content?.text || "";
-        const bubble = getOrCreateStreamingBubble("goose", "Goose");
-        bubble.textContent += text;
-        el.messages.scrollTop = el.messages.scrollHeight;
-      } else if (kind === "agent_thought_chunk") {
-        const text = update.content?.text || "";
-        const bubble = getOrCreateStreamingBubble("goose", "Goose (Pensée)");
-        bubble.textContent += text;
-        el.messages.scrollTop = el.messages.scrollHeight;
-      } else if (kind === "tool_call") {
-        appendMessage("tool", `Goose Tool • ${update.title || "Outil"}`, JSON.stringify(update, null, 2));
-      }
-    } else if (method === "bridge/error") {
-      appendMessage("system", "Goose", params.message || JSON.stringify(params));
-    }
-  }
-
-  async function startNewGooseSession() {
-    if (!state.goose.connected) {
-      appendMessage("system", "Goose", "Connectez-vous d'abord à Goose.");
-      return null;
-    }
-    const cwd = el.gooseCwd.value.trim() || "/srv";
-    try {
-      const res = await sendGooseRpc("session/new", { cwd, mcpServers: [] });
-      const id = res?.sessionId || res?.id;
-      if (id) {
-        state.goose.activeSessionId = id;
-        if (!state.goose.sessions.find((s) => s.id === id)) {
-          state.goose.sessions.unshift({ id, cwd });
+    // ═════════════════════════════════════════════════════════════════════════
+    // 5. EVENT LISTENERS & STATUS PROBES
+    // ═════════════════════════════════════════════════════════════════════════
+    $("btn-codex-connect").addEventListener("click", connectCodex);
+    $("btn-codex-new").addEventListener("click", startNewCodexThread);
+    $("btn-codex-refresh").addEventListener("click", refreshCodexThreads);
+    $("btn-codex-clear").addEventListener("click", () => ($("codex-messages").innerHTML = ""));
+    $("btn-codex-interrupt").addEventListener("click", () => {
+        if (state.codex.activeThreadId) {
+            sendCodexRpc("turn/interrupt", { threadId: state.codex.activeThreadId });
         }
-        updateHeaderUI();
-        appendMessage("system", "Goose", `Session ACP créée : ${id}`);
-      }
-      return id;
-    } catch (err) {
-      appendMessage("system", "Erreur Goose", `Échec session/new: ${err.message}`);
-      return null;
-    }
-  }
+    });
 
-  async function loadGooseSession(sessionId) {
-    state.goose.activeSessionId = sessionId;
-    updateHeaderUI();
-    const cwd = el.gooseCwd.value.trim() || "/srv";
-    try {
-      await sendGooseRpc("session/load", { sessionId, cwd, mcpServers: [] });
-      appendMessage("system", "Goose", `Session chargée : ${sessionId}`);
-    } catch (err) {
-      appendMessage("system", "Goose", `Session sélectionnée : ${sessionId}`);
-    }
-  }
+    $("btn-codex-approve").addEventListener("click", () => {
+        const req = state.pendingApproval.codex;
+        if (!req) return;
+        state.pendingApproval.codex = null;
+        $("codex-approval-banner").classList.add("hidden");
+        state.codex.ws?.send(JSON.stringify({ jsonrpc: "2.0", id: req.id, result: { decision: "accept" } }));
+    });
 
-  // =========================================================================
-  // APPROVAL REQUESTS & PROMPT SUBMISSION
-  // =========================================================================
-  function showApprovalModal(agent, requestId, method, params) {
-    state.pendingApproval = { agent, requestId, method, params };
-    el.approvalDetails.textContent = `${method}\n${JSON.stringify(params, null, 2)}`;
-    el.approvalBanner.classList.remove("hidden");
-  }
+    $("btn-codex-decline").addEventListener("click", () => {
+        const req = state.pendingApproval.codex;
+        if (!req) return;
+        state.pendingApproval.codex = null;
+        $("codex-approval-banner").classList.add("hidden");
+        state.codex.ws?.send(JSON.stringify({ jsonrpc: "2.0", id: req.id, result: { decision: "decline" } }));
+    });
 
-  function respondApproval(approved) {
-    if (!state.pendingApproval) return;
-    const { agent, requestId, params } = state.pendingApproval;
-    state.pendingApproval = null;
-    el.approvalBanner.classList.add("hidden");
+    $("codex-prompt-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const text = $("codex-prompt-input").value.trim();
+        if (!text) return;
+        $("codex-prompt-input").value = "";
+        appendMsg("codex-messages", "user", "Vous", text);
 
-    if (agent === "codex") {
-      const reply = {
-        jsonrpc: "2.0",
-        id: requestId,
-        result: { decision: approved ? "accept" : "decline" },
-      };
-      logRpc("out", reply);
-      state.codex.ws?.send(JSON.stringify(reply));
-    } else {
-      const options = params?.options || [];
-      const allowOpt = options.find((o) => o.kind?.startsWith("allow")) || options[0];
-      const reply = {
-        jsonrpc: "2.0",
-        id: requestId,
-        result: approved
-          ? { outcome: { outcome: "selected", optionId: allowOpt?.optionId || "allow" } }
-          : { outcome: { outcome: "cancelled" } },
-      };
-      logRpc("out", reply);
-      state.goose.ws?.send(JSON.stringify(reply));
-    }
-  }
+        if (!state.codex.connected) {
+            appendMsg("codex-messages", "system", "Codex", "Connectez-vous d'abord à Codex.");
+            return;
+        }
+        let threadId = state.codex.activeThreadId;
+        if (!threadId) {
+            threadId = await startNewCodexThread();
+            if (!threadId) return;
+        }
+        state.codex.streamingEl = null;
+        state.codex.turnRunning = true;
+        updateCodexUI();
+        try {
+            await sendCodexRpc("turn/start", { threadId, input: [{ type: "text", text }] });
+        } catch (err) {
+            state.codex.turnRunning = false;
+            updateCodexUI();
+            appendMsg("codex-messages", "system", "Erreur Codex", err.message);
+        }
+    });
 
-  async function handlePromptSubmit(e) {
-    e.preventDefault();
-    const text = el.promptInput.value.trim();
-    if (!text) return;
-    el.promptInput.value = "";
+    $("btn-goose-connect").addEventListener("click", connectGoose);
+    $("btn-goose-new").addEventListener("click", startNewGooseSession);
+    $("btn-goose-clear").addEventListener("click", () => ($("goose-messages").innerHTML = ""));
+    $("btn-goose-cancel").addEventListener("click", () => {
+        if (state.goose.activeSessionId) {
+            sendGooseRpc("session/cancel", { sessionId: state.goose.activeSessionId }, true);
+        }
+    });
 
-    appendMessage("user", "Vous", text);
+    $("btn-goose-approve").addEventListener("click", () => {
+        const req = state.pendingApproval.goose;
+        if (!req) return;
+        state.pendingApproval.goose = null;
+        $("goose-approval-banner").classList.add("hidden");
+        const opts = req.params?.options || [];
+        const allow = opts.find((o) => o.kind?.startsWith("allow")) || opts[0];
+        state.goose.ws?.send(
+            JSON.stringify({
+                jsonrpc: "2.0",
+                id: req.id,
+                result: { outcome: { outcome: "selected", optionId: allow?.optionId || "allow" } },
+            })
+        );
+    });
 
-    if (state.activeAgent === "codex") {
-      if (!state.codex.connected) {
-        appendMessage("system", "Codex", "Veuillez d'abord cliquer sur Connecter.");
-        return;
-      }
-      let threadId = state.codex.activeThreadId;
-      if (!threadId) {
-        threadId = await startNewCodexThread();
-        if (!threadId) return;
-      }
-      state.codex.streamingEl = null;
-      state.codex.turnRunning = true;
-      updateHeaderUI();
-      try {
-        await sendCodexRpc("turn/start", {
-          threadId,
-          input: [{ type: "text", text }],
-        });
-      } catch (err) {
-        state.codex.turnRunning = false;
-        updateHeaderUI();
-        appendMessage("system", "Erreur Codex", err.message);
-      }
-    } else {
-      if (!state.goose.connected) {
-        appendMessage("system", "Goose", "Veuillez d'abord cliquer sur Connecter.");
-        return;
-      }
-      let sessionId = state.goose.activeSessionId;
-      if (!sessionId) {
-        sessionId = await startNewGooseSession();
-        if (!sessionId) return;
-      }
-      state.goose.streamingEl = null;
-      state.goose.turnRunning = true;
-      updateHeaderUI();
-      try {
-        const res = await sendGooseRpc("session/prompt", {
-          sessionId,
-          prompt: [{ type: "text", text }],
-        });
-        state.goose.turnRunning = false;
+    $("btn-goose-decline").addEventListener("click", () => {
+        const req = state.pendingApproval.goose;
+        if (!req) return;
+        state.pendingApproval.goose = null;
+        $("goose-approval-banner").classList.add("hidden");
+        state.goose.ws?.send(
+            JSON.stringify({
+                jsonrpc: "2.0",
+                id: req.id,
+                result: { outcome: { outcome: "cancelled" } },
+            })
+        );
+    });
+
+    $("goose-prompt-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const text = $("goose-prompt-input").value.trim();
+        if (!text) return;
+        $("goose-prompt-input").value = "";
+        appendMsg("goose-messages", "user", "Vous", text);
+
+        if (!state.goose.connected) {
+            appendMsg("goose-messages", "system", "Goose", "Connectez-vous d'abord à Goose.");
+            return;
+        }
+        let sessionId = state.goose.activeSessionId;
+        if (!sessionId) {
+            sessionId = await startNewGooseSession();
+            if (!sessionId) return;
+        }
         state.goose.streamingEl = null;
-        updateHeaderUI();
-        if (res?.text) {
-          appendMessage("agent", "Goose", res.text);
+        state.goose.turnRunning = true;
+        updateGooseUI();
+        try {
+            const res = await sendGooseRpc("session/prompt", {
+                sessionId,
+                prompt: [{ type: "text", text }],
+            });
+            const finalReply = state.goose.streamingEl ? state.goose.streamingEl.textContent : res?.text || "";
+            state.goose.turnRunning = false;
+            state.goose.streamingEl = null;
+            updateGooseUI();
+            if (finalReply) await checkAndForwardMentions("goose", finalReply, "goose-messages");
+        } catch (err) {
+            state.goose.turnRunning = false;
+            updateGooseUI();
+            appendMsg("goose-messages", "system", "Erreur Goose", err.message);
         }
-      } catch (err) {
-        state.goose.turnRunning = false;
-        updateHeaderUI();
-        appendMessage("system", "Erreur Goose", err.message);
-      }
+    });
+
+    $("btn-bridge-clear").addEventListener("click", () => ($("bridge-messages").innerHTML = ""));
+    $("btn-peer-clear").addEventListener("click", () => ($("peer-messages").innerHTML = ""));
+    $("btn-clear-rpc").addEventListener("click", () => ($("rpc-log").innerHTML = ""));
+
+    $("rpc-custom-form").addEventListener("submit", (e) => {
+        e.preventDefault();
+        const raw = $("rpc-custom-input").value.trim();
+        if (!raw) return;
+        $("rpc-custom-input").value = "";
+        const target = $("rpc-target-agent").value;
+        logRpc("out", target, raw);
+        if (target === "codex") state.codex.ws?.send(raw);
+        else state.goose.ws?.send(raw);
+    });
+
+    async function loadConfigAndProbe() {
+        try {
+            const cfg = await (await fetch("/api/config")).json();
+            if (cfg.codex_unix_available) $("codex-mode").value = "unix";
+            if (cfg.has_goose_secret) {
+                $("goose-token").placeholder = "Clé configurée côté serveur Rust ✓";
+            }
+        } catch {
+            // ignore
+        }
+        await probeAllStatus();
     }
-  }
 
-  async function interruptActiveTurn() {
-    if (state.activeAgent === "codex" && state.codex.activeThreadId) {
-      await sendCodexRpc("turn/interrupt", { threadId: state.codex.activeThreadId });
-    } else if (state.activeAgent === "goose" && state.goose.activeSessionId) {
-      await sendGooseRpc("session/cancel", { sessionId: state.goose.activeSessionId }, true);
-      state.goose.turnRunning = false;
-      updateHeaderUI();
+    async function probeAllStatus() {
+        try {
+            const st = await (await fetch("/api/status")).json();
+            const setBadge = (badgeId, dotId, online, label) => {
+                const b = $(badgeId);
+                const d = $(dotId);
+                if (b) b.className = `badge ${online ? "badge-online" : "badge-offline"}`;
+                if (d) d.className = `status-dot ${online ? "online" : "offline"}`;
+                if (b && label) b.title = label;
+            };
+            const codexOnline = Boolean(st.codex_ws?.online || st.codex_unix?.online);
+            setBadge("badge-codex", "dot-codex", codexOnline, st.codex_ws?.detail || st.codex_unix?.detail);
+            setBadge("badge-goose", "dot-goose", Boolean(st.goose?.online), st.goose?.detail);
+            setBadge("badge-claude", "dot-claude", Boolean(st.claude?.online), st.claude?.detail);
+            setBadge("badge-antigravity", "dot-antigravity", Boolean(st.antigravity?.online), st.antigravity?.detail);
+        } catch {
+            // ignore
+        }
     }
-  }
 
-  // =========================================================================
-  // SERVER CONFIG & HEALTH PROBE
-  // =========================================================================
-  async function loadServerConfig() {
-    try {
-      const resp = await fetch("/api/config");
-      const cfg = await resp.json();
-      if (cfg.default_cwd) {
-        el.codexCwd.value = cfg.default_cwd;
-        el.gooseCwd.value = cfg.default_cwd;
-      }
-      if (cfg.codex_ws_url) {
-        el.codexTarget.placeholder = cfg.codex_ws_url;
-      }
-      if (cfg.goose_ws_url) {
-        el.gooseTarget.placeholder = cfg.goose_ws_url;
-      }
-      if (cfg.codex_unix_available) {
-        el.codexMode.value = "unix";
-      }
-      if (cfg.has_goose_secret) {
-        el.gooseToken.placeholder = "Clé configurée côté serveur Rust ✓";
-      }
-    } catch {
-      // ignore
-    }
-  }
-
-  async function probeStatus() {
-    try {
-      const resp = await fetch("/api/status");
-      const st = await resp.json();
-      const codexOk = st.codex_ws?.online || st.codex_unix?.online;
-      const gooseOk = st.goose?.online;
-
-      el.dotCodex.className = `status-dot ${codexOk ? "online" : "offline"}`;
-      el.dotGoose.className = `status-dot ${gooseOk ? "online" : "offline"}`;
-    } catch {
-      el.dotCodex.className = "status-dot offline";
-      el.dotGoose.className = "status-dot offline";
-    }
-  }
-
-  function switchAgentTab(agent) {
-    state.activeAgent = agent;
-    const isCodex = agent === "codex";
-    el.tabCodex.classList.toggle("active", isCodex);
-    el.tabGoose.classList.toggle("active", !isCodex);
-    el.controlsCodex.classList.toggle("hidden", !isCodex);
-    el.controlsGoose.classList.toggle("hidden", isCodex);
-    el.configTitle.textContent = isCodex ? "Connexion Codex" : "Connexion Goose";
-    el.sessionsLabel.textContent = isCodex ? "Threads Codex" : "Sessions Goose";
-    updateHeaderUI();
-  }
-
-  // Event Listeners
-  el.tabCodex.addEventListener("click", () => switchAgentTab("codex"));
-  el.tabGoose.addEventListener("click", () => switchAgentTab("goose"));
-  el.btnProbe.addEventListener("click", probeStatus);
-  el.btnCodexConnect.addEventListener("click", connectCodex);
-  el.btnCodexNew.addEventListener("click", startNewCodexThread);
-  el.btnGooseConnect.addEventListener("click", connectGoose);
-  el.btnGooseNew.addEventListener("click", startNewGooseSession);
-  el.btnRefreshSessions.addEventListener("click", () => {
-    if (state.activeAgent === "codex") refreshCodexThreads();
-    else renderSessionsList();
-  });
-  el.btnInterrupt.addEventListener("click", interruptActiveTurn);
-  el.btnClearChat.addEventListener("click", () => {
-    el.messages.innerHTML = "";
-  });
-  el.btnApprove.addEventListener("click", () => respondApproval(true));
-  el.btnDecline.addEventListener("click", () => respondApproval(false));
-  el.promptForm.addEventListener("submit", handlePromptSubmit);
-  el.promptInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handlePromptSubmit(e);
-    }
-  });
-  el.btnToggleRpc.addEventListener("click", () => {
-    el.rpcDrawer.classList.toggle("hidden");
-  });
-  el.btnCloseRpc.addEventListener("click", () => {
-    el.rpcDrawer.classList.add("hidden");
-  });
-  el.btnClearRpc.addEventListener("click", () => {
-    el.rpcLog.innerHTML = "";
-  });
-  el.rpcCustomForm.addEventListener("submit", (e) => {
-    e.preventDefault();
-    const raw = el.rpcCustomInput.value.trim();
-    if (!raw) return;
-    el.rpcCustomInput.value = "";
-    logRpc("out", raw);
-    if (state.activeAgent === "codex") {
-      state.codex.ws?.send(raw);
-    } else {
-      state.goose.ws?.send(raw);
-    }
-  });
-
-  // Init
-  loadServerConfig().then(probeStatus);
-  setInterval(probeStatus, 10000);
+    $("btn-probe").addEventListener("click", probeAllStatus);
+    loadConfigAndProbe();
+    setInterval(probeAllStatus, 10000);
 })();
