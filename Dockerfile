@@ -5,7 +5,7 @@ LABEL maintainer="studyfranco@gmail.com"
 USER root
 
 RUN set -x \
-    && apt update \
+    && mkdir -p /var/cache/apt/archives/partial /var/lib/apt/lists/partial && apt update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y bzip2 libxcb1 dbus libglib2.0-0 --no-install-recommends --fix-missing \
     && curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh | CONFIGURE=false GOOSE_BIN_DIR=/usr/local/bin bash \
     && chmod 0755 /usr/local/bin/goose \
@@ -15,7 +15,7 @@ RUN set -x \
         /home/thenewuser/.local/state/goose \
     && apt autopurge -yy \
     && apt clean \
-    && rm -rf /var/cache/* /var/lib/apt/lists/* /var/log/* /var/tmp/* /tmp/*
+    && rm -rf /var/lib/apt/lists/* /var/log/* /var/tmp/* /tmp/*
 
 COPY --chown=thenewuser:thenewuser run-goose.sh /usr/local/bin/start-cli.sh
 RUN chmod 0755 /usr/local/bin/start-cli.sh
