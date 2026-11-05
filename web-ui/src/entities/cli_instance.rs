@@ -18,6 +18,10 @@ pub struct Model {
     /// Optional secret token / API key
     pub secret_token: Option<String>,
     pub default_cwd: String,
+    /// Role assigned to this CLI agent ("architect" | "developer" | "reviewer" | "tester" | "security" | "general")
+    pub role: String,
+    /// System / onboarding prompt defining who the agent is and how orchestration works
+    pub role_prompt: String,
     pub created_at: DateTimeUtc,
     pub updated_at: DateTimeUtc,
 }

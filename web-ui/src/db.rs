@@ -10,6 +10,17 @@ use sea_orm::{
 use std::{path::Path, time::Duration};
 use uuid::Uuid;
 
+pub fn default_role_prompt(role: &str) -> &'static str {
+    match role {
+        "architect" => "Tu es l'Architecte Logiciel du collectif Simply Agent Hub. Ton rôle est de concevoir l'architecture technique, découper les tâches de manière claire, définir les contrats d'API/bases de données et coordonner les autres agents CLI (Développeur, Reviewer, Testeur) sur le canal d'orchestration.",
+        "developer" => "Tu es l'Agent Développeur Principal (Implémentation) du collectif Simply Agent Hub. Ton rôle est d'écrire du code propre, performant et idiomatique dans le workspace partagé (/srv), d'appliquer les spécifications de l'Architecte et de corriger les retours du Reviewer.",
+        "reviewer" => "Tu es l'Agent Code Reviewer & Qualité du collectif Simply Agent Hub. Ton rôle est d'analyser les modifications, détecter les bugs potentiels, vérifier la sécurité, la gestion d'erreurs et la conformité au style du projet, puis de donner un retour constructif aux autres agents sur le canal.",
+        "tester" => "Tu es l'Agent Ingénieur QA & Tests E2E du collectif Simply Agent Hub. Ton rôle est d'élaborer et d'exécuter les tests unitaires, d'intégration et les vérifications curl/E2E, puis de valider que tout compile et passe sans régression.",
+        "security" => "Tu es l'Agent Auditeur Sécurité & DevSecOps du collectif Simply Agent Hub. Ton rôle est de vérifier les permissions, l'isolation des conteneurs rootless, l'absence de secrets exposés et la robustesse des entrées utilisateur.",
+        _ => "Tu es un Agent CLI polyvalent connecté au bus d'orchestration Simply Agent Hub. Collabore de manière concise et structurée avec les autres agents présents dans le canal.",
+    }
+}
+
 pub async fn connect_and_migrate(
     database_url: &str,
     default_codex_ws: &str,
@@ -19,15 +30,14 @@ pub async fn connect_and_migrate(
     default_agy_rpc: &str,
     default_cwd: &str,
 ) -> Result<DatabaseConnection, DbErr> {
-    // Ensure parent directory exists for file-backed SQLite URLs
     if let Some(rest) = database_url.strip_prefix("sqlite://") {
         let path_part = rest.split('?').next().unwrap_or(rest);
-        if path_part != ":memory:" && !path_part.is_empty() {
-            if let Some(parent) = Path::new(path_part).parent() {
-                if !parent.as_os_str().is_empty() {
-                    let _ = std::fs::create_dir_all(parent);
-                }
-            }
+        if path_part != ":memory:"
+            && !path_part.is_empty()
+            && let Some(parent) = Path::new(path_part).parent()
+            && !parent.as_os_str().is_empty()
+        {
+            let _ = std::fs::create_dir_all(parent);
         }
     }
 
@@ -45,7 +55,6 @@ pub async fn connect_and_migrate(
     let db = Database::connect(opt).await?;
     Migrator::up(&db, None).await?;
 
-    // Seed initial CLI instances if table is empty
     let count = cli_instance::Entity::find().count(&db).await?;
     if count == 0 {
         let now = Utc::now();
@@ -64,11 +73,13 @@ pub async fn connect_and_migrate(
                 bridge_url: Set(Some("http://codex:3287/rpc".to_string())),
                 secret_token: Set(None),
                 default_cwd: Set(default_cwd.to_string()),
+                role: Set("developer".to_string()),
+                role_prompt: Set(default_role_prompt("developer").to_string()),
                 created_at: Set(now),
                 updated_at: Set(now),
             },
             cli_instance::ActiveModel {
-                id: Set(antigravity_id(agy_id)),
+                id: Set(agy_id),
                 name: Set("Antigravity #1 (Principal)".to_string()),
                 kind: Set("antigravity".to_string()),
                 transport: Set("rpc".to_string()),
@@ -76,6 +87,8 @@ pub async fn connect_and_migrate(
                 bridge_url: Set(Some(default_agy_rpc.to_string())),
                 secret_token: Set(None),
                 default_cwd: Set(default_cwd.to_string()),
+                role: Set("reviewer".to_string()),
+                role_prompt: Set(default_role_prompt("reviewer").to_string()),
                 created_at: Set(now),
                 updated_at: Set(now),
             },
@@ -88,6 +101,8 @@ pub async fn connect_and_migrate(
                 bridge_url: Set(Some(default_claude_rpc.to_string())),
                 secret_token: Set(None),
                 default_cwd: Set(default_cwd.to_string()),
+                role: Set("architect".to_string()),
+                role_prompt: Set(default_role_prompt("architect").to_string()),
                 created_at: Set(now),
                 updated_at: Set(now),
             },
@@ -100,6 +115,8 @@ pub async fn connect_and_migrate(
                 bridge_url: Set(Some("http://goose:3288/rpc".to_string())),
                 secret_token: Set(default_goose_secret),
                 default_cwd: Set(default_cwd.to_string()),
+                role: Set("tester".to_string()),
+                role_prompt: Set(default_role_prompt("tester").to_string()),
                 created_at: Set(now),
                 updated_at: Set(now),
             },
@@ -120,6 +137,8 @@ pub async fn connect_and_migrate(
                     "Canal principal d'orchestration inter-agents".to_string(),
                 )),
                 participant_ids_json: Set(participants),
+                retention_days: Set(30),
+                max_messages: Set(200),
                 created_at: Set(now),
             };
             let _ = default_chan.insert(&db).await;
@@ -127,8 +146,4 @@ pub async fn connect_and_migrate(
     }
 
     Ok(db)
-}
-
-fn antigravity_id(id: Uuid) -> Uuid {
-    id
 }

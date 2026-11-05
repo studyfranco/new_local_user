@@ -2,6 +2,7 @@
     const state = {
         instances: [],
         activeInstanceId: null,
+        rolePresets: {},
         rpcSeq: 1,
         pendingRequests: new Map(),
         pendingApproval: null,
@@ -13,6 +14,9 @@
         sessionsByInstance: {},
         streamingEl: null,
         turnRunning: false,
+
+        // Native interactive terminal WS
+        terminalWs: null,
 
         // Orchestration channels state
         channels: [],
@@ -37,6 +41,58 @@
             .replace(/&/g, "&amp;")
             .replace(/</g, "&lt;")
             .replace(/>/g, "&gt;");
+    }
+
+    // Lightweight ANSI SGR color parser for native terminal viewport
+    function ansiToHtml(raw) {
+        const safe = escapeHtml(raw);
+        const colorMap = {
+            "30": "#555",
+            "31": "#ec7063",
+            "32": "#58d68d",
+            "33": "#f5b041",
+            "34": "#5dade2",
+            "35": "#af7ac5",
+            "36": "#1cdc9a",
+            "37": "#eff0f1",
+            "90": "#7f8c8d",
+            "91": "#ff6b6b",
+            "92": "#2ecc71",
+            "93": "#f1c40f",
+            "94": "#3daee9",
+            "95": "#d2b4de",
+            "96": "#48c9b0",
+            "97": "#ffffff",
+        };
+        let openSpans = 0;
+        const formatted = safe.replace(/\x1b\[([0-9;]*)m/g, (_, codesStr) => {
+            const codes = codesStr.split(";");
+            if (codesStr === "" || codes.includes("0") || codes.includes("39")) {
+                let closing = "";
+                while (openSpans > 0) {
+                    closing += "</span>";
+                    openSpans--;
+                }
+                return closing;
+            }
+            for (const c of codes) {
+                if (colorMap[c]) {
+                    openSpans++;
+                    return `<span style="color:${colorMap[c]}">`;
+                }
+                if (c === "1") {
+                    openSpans++;
+                    return `<span style="font-weight:700">`;
+                }
+            }
+            return "";
+        });
+        let tail = "";
+        while (openSpans > 0) {
+            tail += "</span>";
+            openSpans--;
+        }
+        return formatted.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "") + tail;
     }
 
     function logRpc(direction, label, payload) {
@@ -89,12 +145,29 @@
             document.querySelectorAll(".tab-panel").forEach((panel) => {
                 panel.classList.toggle("active", panel.id === `tab-${target}`);
             });
+            if (target === "git") {
+                loadGitStatus();
+            }
         });
     });
 
     // ═════════════════════════════════════════════════════════════════════════
-    // 1. CLI INSTANCES MANAGEMENT (SeaORM CRUD + Dropdown + Inventory Table)
+    // 1. CLI INSTANCES, ROLES & SEAORM CRUD
     // ═════════════════════════════════════════════════════════════════════════
+    async function loadRolePresets() {
+        try {
+            const resp = await fetch("/api/roles/presets");
+            const list = await resp.json();
+            if (Array.isArray(list)) {
+                list.forEach((r) => {
+                    state.rolePresets[r.id] = r;
+                });
+            }
+        } catch {
+            // ignore
+        }
+    }
+
     async function loadInstances() {
         try {
             const resp = await fetch("/api/instances");
@@ -111,6 +184,7 @@
             }
 
             renderCliSelector();
+            renderRolePanel();
             renderInventoryTable();
             renderChannelParticipants();
             updateConsoleBadges();
@@ -129,7 +203,7 @@
             const opt = document.createElement("option");
             opt.value = inst.id;
             const dot = inst.online ? "🟢" : "🔴";
-            opt.textContent = `${dot} [${inst.kind.toUpperCase()}] ${inst.name}`;
+            opt.textContent = `${dot} [${inst.kind.toUpperCase()}] ${inst.name} (${inst.role || "developer"})`;
             if (inst.id === state.activeInstanceId) opt.selected = true;
             sel.appendChild(opt);
         });
@@ -137,13 +211,92 @@
         const active = getActiveInstance();
         const headerBadge = $("header-active-cli-badge");
         if (active) {
-            headerBadge.textContent = `${active.name} (${active.kind})`;
+            headerBadge.textContent = `${active.name} (${active.role || active.kind})`;
             headerBadge.className = `badge ${active.online ? "badge-online" : "badge-offline"}`;
         } else {
             headerBadge.textContent = "Aucun CLI";
             headerBadge.className = "badge";
         }
     }
+
+    function renderRolePanel() {
+        const inst = getActiveInstance();
+        if (!inst) return;
+        const roleSel = $("cli-role-selector");
+        const promptBox = $("cli-role-prompt");
+        if (roleSel) roleSel.value = inst.role || "developer";
+        if (promptBox) {
+            promptBox.value =
+                inst.role_prompt ||
+                state.rolePresets[inst.role || "developer"]?.prompt ||
+                "";
+        }
+    }
+
+    $("cli-role-selector").addEventListener("change", (e) => {
+        const selectedRole = e.target.value;
+        const preset = state.rolePresets[selectedRole];
+        if (preset && preset.prompt) {
+            $("cli-role-prompt").value = preset.prompt;
+        }
+    });
+
+    $("btn-save-role").addEventListener("click", async () => {
+        const inst = getActiveInstance();
+        if (!inst) return;
+        const role = $("cli-role-selector").value;
+        const role_prompt = $("cli-role-prompt").value.trim();
+        const resp = await fetch(`/api/instances/${inst.id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ role, role_prompt }),
+        });
+        const updated = await resp.json();
+        if (updated.id) {
+            await loadInstances();
+            appendMsg(
+                "console-messages",
+                "system",
+                inst.name,
+                `Rôle « ${role} » et prompt système enregistrés en base SeaORM.`
+            );
+        }
+    });
+
+    $("btn-onboard-cli").addEventListener("click", async () => {
+        const inst = getActiveInstance();
+        if (!inst) return;
+        const role = $("cli-role-selector").value;
+        const role_prompt = $("cli-role-prompt").value.trim();
+
+        // Save role & prompt first
+        await fetch(`/api/instances/${inst.id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ role, role_prompt }),
+        });
+        await loadInstances();
+
+        appendMsg(
+            "console-messages",
+            "user",
+            "Initialisation Rôle",
+            `Envoi du prompt d'identité et de rôle (${role}) à ${inst.name}...`
+        );
+        try {
+            const resp = await fetch(`/api/instances/${inst.id}/onboard`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ custom_prompt: role_prompt }),
+            });
+            const data = await resp.json();
+            logRpc("in", `onboard:${inst.name}`, data);
+            if (data.error) throw new Error(data.error);
+            appendMsg("console-messages", "agent", `${inst.name} [${data.role}]`, data.reply || "Rôle initialisé.");
+        } catch (err) {
+            appendMsg("console-messages", "system", inst.name, `Erreur d'initialisation du rôle: ${err.message}`);
+        }
+    });
 
     function renderInventoryTable() {
         const tbody = $("inventory-tbody");
@@ -154,9 +307,9 @@
             tr.innerHTML = `
                 <td><strong>${escapeHtml(inst.name)}</strong></td>
                 <td><span class="badge badge-tier">${escapeHtml(inst.kind.toUpperCase())}</span></td>
+                <td><span class="badge badge-online">${escapeHtml(inst.role || "developer")}</span></td>
                 <td><code>${escapeHtml(inst.transport)}</code></td>
                 <td><code>${escapeHtml(inst.endpoint_url)}</code></td>
-                <td><code>${escapeHtml(inst.bridge_url || "-")}</code></td>
                 <td><code>${escapeHtml(inst.default_cwd)}</code></td>
                 <td>
                     <span class="badge ${inst.online ? "badge-online" : "badge-offline"}" title="${escapeHtml(inst.status_detail)}">
@@ -180,6 +333,7 @@
                 const act = b.getAttribute("data-action");
                 state.activeInstanceId = id;
                 renderCliSelector();
+                renderRolePanel();
                 updateConsoleBadges();
                 if (act === "select") {
                     document.querySelector('.tab-btn[data-tab="console"]').click();
@@ -199,11 +353,19 @@
             state.ws.close();
             state.ws = null;
         }
+        if (state.terminalWs) {
+            state.terminalWs.close();
+            state.terminalWs = null;
+        }
         state.connected = false;
         state.activeSessionId = null;
         renderCliSelector();
+        renderRolePanel();
         updateConsoleBadges();
         renderSessionsList();
+        if (!$("native-terminal-drawer").classList.contains("hidden")) {
+            connectNativeTerminal();
+        }
     });
 
     function openAddCliForm() {
@@ -211,6 +373,7 @@
         $("cli-form-id").value = "";
         $("cli-form-name").value = "";
         $("cli-form-kind").value = "codex";
+        $("cli-form-role").value = "developer";
         $("cli-form-transport").value = "ws";
         $("cli-form-endpoint").value = "ws://codex:4500";
         $("cli-form-bridge").value = "http://codex:3287/rpc";
@@ -227,6 +390,7 @@
         $("cli-form-id").value = inst.id;
         $("cli-form-name").value = inst.name;
         $("cli-form-kind").value = inst.kind;
+        $("cli-form-role").value = inst.role || "developer";
         $("cli-form-transport").value = inst.transport;
         $("cli-form-endpoint").value = inst.endpoint_url;
         $("cli-form-bridge").value = inst.bridge_url || "";
@@ -272,6 +436,7 @@
         const payload = {
             name: $("cli-form-name").value.trim() || "Nouveau CLI",
             kind: $("cli-form-kind").value,
+            role: $("cli-form-role").value,
             transport: $("cli-form-transport").value,
             endpoint_url: $("cli-form-endpoint").value.trim(),
             bridge_url: $("cli-form-bridge").value.trim() || null,
@@ -291,7 +456,7 @@
             state.activeInstanceId = saved.id;
             $("cli-form-box").classList.add("hidden");
             await loadInstances();
-            appendMsg("console-messages", "system", "Base SeaORM", `Instance « ${saved.name} » enregistrée.`);
+            appendMsg("console-messages", "system", "Base SeaORM", `Instance « ${saved.name} » (${saved.role}) enregistrée.`);
         }
     });
 
@@ -361,13 +526,134 @@
     });
 
     // ═════════════════════════════════════════════════════════════════════════
-    // 3. UNIFIED ACTIVE CLI CONSOLE (Codex WS/Unix, Goose ACP, Claude/Agy RPC)
+    // 3. NATIVE INTERACTIVE TERMINAL (WebSocket /ws/instances/{id}/terminal)
+    // ═════════════════════════════════════════════════════════════════════════
+    function connectNativeTerminal() {
+        const inst = getActiveInstance();
+        if (!inst) return;
+
+        if (state.terminalWs) {
+            state.terminalWs.close();
+            state.terminalWs = null;
+        }
+
+        const drawer = $("native-terminal-drawer");
+        drawer.classList.remove("hidden");
+        const viewport = $("terminal-viewport");
+        const statusEl = $("terminal-ws-status");
+        statusEl.textContent = `Connexion à ${inst.name}...`;
+        statusEl.className = "badge";
+
+        const ws = new WebSocket(`${wsBaseUrl()}/ws/instances/${encodeURIComponent(inst.id)}/terminal`);
+        state.terminalWs = ws;
+
+        ws.onopen = () => {
+            statusEl.textContent = `Connecté (${inst.name} — Tmux PTY)`;
+            statusEl.className = "badge badge-online";
+            viewport.focus();
+        };
+
+        ws.onmessage = (ev) => {
+            try {
+                const msg = JSON.parse(ev.data);
+                if (msg.type === "screen") {
+                    viewport.innerHTML = ansiToHtml(msg.data || "(Session tmux prête)");
+                    viewport.scrollTop = viewport.scrollHeight;
+                }
+            } catch {
+                // ignore
+            }
+        };
+
+        ws.onclose = () => {
+            statusEl.textContent = "Déconnecté";
+            statusEl.className = "badge badge-offline";
+        };
+    }
+
+    $("btn-cli-tmux").addEventListener("click", () => {
+        const drawer = $("native-terminal-drawer");
+        if (drawer.classList.contains("hidden")) {
+            connectNativeTerminal();
+        } else {
+            drawer.classList.add("hidden");
+            if (state.terminalWs) {
+                state.terminalWs.close();
+                state.terminalWs = null;
+            }
+        }
+    });
+
+    $("btn-term-close").addEventListener("click", () => {
+        $("native-terminal-drawer").classList.add("hidden");
+        if (state.terminalWs) {
+            state.terminalWs.close();
+            state.terminalWs = null;
+        }
+    });
+
+    $("btn-term-refresh").addEventListener("click", () => {
+        if (state.terminalWs?.readyState === WebSocket.OPEN) {
+            state.terminalWs.send(JSON.stringify({ type: "refresh" }));
+        } else {
+            connectNativeTerminal();
+        }
+    });
+
+    $("btn-term-ctrlc").addEventListener("click", () => {
+        if (state.terminalWs?.readyState === WebSocket.OPEN) {
+            state.terminalWs.send(JSON.stringify({ type: "raw", data: "C-c", special: true }));
+        }
+    });
+
+    $("btn-term-enter").addEventListener("click", () => {
+        if (state.terminalWs?.readyState === WebSocket.OPEN) {
+            state.terminalWs.send(JSON.stringify({ type: "raw", data: "Enter", special: true }));
+        }
+    });
+
+    $("terminal-input-form").addEventListener("submit", (e) => {
+        e.preventDefault();
+        const input = $("terminal-cmd-input");
+        const text = input.value;
+        input.value = "";
+        if (state.terminalWs?.readyState === WebSocket.OPEN) {
+            state.terminalWs.send(JSON.stringify({ type: "line", text }));
+        }
+    });
+
+    $("terminal-viewport").addEventListener("keydown", (e) => {
+        if (!state.terminalWs || state.terminalWs.readyState !== WebSocket.OPEN) return;
+        if (e.ctrlKey && e.key.toLowerCase() === "c") {
+            e.preventDefault();
+            state.terminalWs.send(JSON.stringify({ type: "raw", data: "C-c", special: true }));
+        } else if (e.key === "Enter") {
+            e.preventDefault();
+            state.terminalWs.send(JSON.stringify({ type: "raw", data: "Enter", special: true }));
+        } else if (e.key === "Backspace") {
+            e.preventDefault();
+            state.terminalWs.send(JSON.stringify({ type: "raw", data: "BSpace", special: true }));
+        } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            state.terminalWs.send(JSON.stringify({ type: "raw", data: "Up", special: true }));
+        } else if (e.key === "ArrowDown") {
+            e.preventDefault();
+            state.terminalWs.send(JSON.stringify({ type: "raw", data: "Down", special: true }));
+        } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
+            e.preventDefault();
+            state.terminalWs.send(JSON.stringify({ type: "raw", data: e.key, special: false }));
+        }
+    });
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // 4. UNIFIED ACTIVE CLI CONSOLE (Codex WS/Unix, Goose ACP, Claude/Agy RPC)
     // ═════════════════════════════════════════════════════════════════════════
     function updateConsoleBadges() {
         const inst = getActiveInstance();
         $("console-conn-badge").textContent = state.connected ? "Flux Connecté" : "Prêt";
         $("console-conn-badge").className = `badge ${state.connected ? "badge-online" : ""}`;
         $("console-instance-badge").textContent = inst ? `${inst.name} [${inst.kind.toUpperCase()}]` : "Aucun CLI";
+        $("console-role-badge").textContent = inst ? `Rôle: ${inst.role || "developer"}` : "-";
         $("console-session-badge").textContent = state.activeSessionId
             ? `Session/Thread : ${state.activeSessionId}`
             : "Session auto";
@@ -432,7 +718,7 @@
                 "console-messages",
                 "system",
                 inst.name,
-                `Connecté au pont JSON-RPC/Tmux (${inst.endpoint_url}). Vous pouvez envoyer vos instructions.`
+                `Connecté au pont JSON-RPC/Tmux (${inst.endpoint_url}) avec le rôle « ${inst.role} ».`
             );
             return;
         }
@@ -577,23 +863,6 @@
     $("btn-cli-connect").addEventListener("click", connectActiveCli);
     $("btn-cli-new-session").addEventListener("click", createNewSessionOnActiveCli);
 
-    $("btn-cli-tmux").addEventListener("click", async () => {
-        const inst = getActiveInstance();
-        if (!inst) return;
-        try {
-            const resp = await fetch("/api/agents/tmux", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ instance_id: inst.id, lines: 80 }),
-            });
-            const data = await resp.json();
-            if (data.error) throw new Error(data.error);
-            appendMsg("console-messages", "tool", `Tmux (${inst.name})`, data.output || "(Terminal vide)");
-        } catch (err) {
-            appendMsg("console-messages", "system", inst.name, `Capture Tmux indisponible: ${err.message}`);
-        }
-    });
-
     $("btn-cli-native-web").addEventListener("click", () => {
         const inst = getActiveInstance();
         if (!inst) return;
@@ -653,7 +922,6 @@
             return;
         }
 
-        // Unified oneshot / RPC ask fallback for any instance
         state.turnRunning = true;
         updateConsoleBadges();
         try {
@@ -669,7 +937,7 @@
             const data = await resp.json();
             logRpc("in", inst.name, data);
             if (data.error) throw new Error(data.error);
-            appendMsg("console-messages", "agent", inst.name, data.reply || "");
+            appendMsg("console-messages", "agent", `${inst.name} [${inst.role || inst.kind}]`, data.reply || "");
         } catch (err) {
             appendMsg("console-messages", "system", `Erreur (${inst.name})`, err.message);
         } finally {
@@ -719,7 +987,7 @@
     $("btn-console-clear").addEventListener("click", () => ($("console-messages").innerHTML = ""));
 
     // ═════════════════════════════════════════════════════════════════════════
-    // 4. ORCHESTRATION CHANNELS & REAL-TIME MULTI-AGENT BUS
+    // 5. ORCHESTRATION CHANNELS & REAL-TIME MULTI-AGENT BUS
     // ═════════════════════════════════════════════════════════════════════════
     async function loadChannels() {
         try {
@@ -756,6 +1024,10 @@
         });
         const active = getActiveChannel();
         $("channel-title-badge").textContent = active ? `#${active.name}` : "-";
+        if (active) {
+            if ($("channel-retention-days")) $("channel-retention-days").value = active.retention_days ?? 30;
+            if ($("channel-max-messages")) $("channel-max-messages").value = active.max_messages ?? 200;
+        }
     }
 
     function renderChannelParticipants() {
@@ -782,13 +1054,13 @@
             label.className = "participant-check";
             label.innerHTML = `
                 <input type="checkbox" value="${inst.id}" ${checked ? "checked" : ""}>
-                <span>${inst.online ? "🟢" : "🔴"} <strong>${escapeHtml(inst.name)}</strong> <small>(${escapeHtml(inst.kind)})</small></span>
+                <span>${inst.online ? "🟢" : "🔴"} <strong>${escapeHtml(inst.name)}</strong> <small>[${escapeHtml(inst.role || inst.kind)}]</small></span>
             `;
             container.appendChild(label);
 
             const opt = document.createElement("option");
             opt.value = inst.name;
-            opt.textContent = `@${inst.name} (${inst.kind})`;
+            opt.textContent = `@${inst.name} (${inst.role || inst.kind})`;
             recipientSel.appendChild(opt);
         });
     }
@@ -914,14 +1186,150 @@
         if (state.activeChannelId) loadChannelHistory(state.activeChannelId);
     });
 
+    $("btn-save-retention")?.addEventListener("click", async () => {
+        if (!state.activeChannelId) return;
+        const retention_days = parseInt($("channel-retention-days").value, 10) || 0;
+        const max_messages = parseInt($("channel-max-messages").value, 10) || 0;
+        await fetch(`/api/orchestration/channels/${state.activeChannelId}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ retention_days, max_messages }),
+        });
+        const pruneResp = await fetch(`/api/orchestration/channels/${state.activeChannelId}/prune`, {
+            method: "POST",
+        });
+        const pruneData = await pruneResp.json();
+        await loadChannels();
+        appendMsg(
+            "channel-messages",
+            "system",
+            "Rétention SeaORM",
+            `Politique appliquée (${retention_days}j / max ${max_messages} messages). Messages purgés: ${pruneData.pruned_messages ?? 0}.`
+        );
+    });
+
+    $("btn-export-channel-md")?.addEventListener("click", () => {
+        if (!state.activeChannelId) return;
+        window.open(`/api/orchestration/channels/${encodeURIComponent(state.activeChannelId)}/export`, "_blank");
+    });
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // 6. INTEGRATED GIT DIFF, STATUS, COMMIT & REVERT (/api/git/*)
+    // ═════════════════════════════════════════════════════════════════════════
+    function renderHighlightedDiff(diffText) {
+        const viewer = $("git-diff-viewer");
+        if (!viewer) return;
+        if (!diffText || !diffText.trim()) {
+            viewer.innerHTML = `<span class="field-hint">Aucune modification non commitée dans ce dépôt.</span>`;
+            return;
+        }
+        const lines = diffText.split("\n");
+        const htmlLines = lines.map((line) => {
+            const safe = escapeHtml(line);
+            if (line.startsWith("+++") || line.startsWith("---") || line.startsWith("diff --git")) {
+                return `<div class="diff-line diff-header">${safe}</div>`;
+            }
+            if (line.startsWith("@@")) {
+                return `<div class="diff-line diff-hunk">${safe}</div>`;
+            }
+            if (line.startsWith("+")) {
+                return `<div class="diff-line diff-add">${safe}</div>`;
+            }
+            if (line.startsWith("-")) {
+                return `<div class="diff-line diff-del">${safe}</div>`;
+            }
+            return `<div class="diff-line">${safe}</div>`;
+        });
+        viewer.innerHTML = htmlLines.join("");
+    }
+
+    async function loadGitStatus() {
+        const cwd = $("git-cwd-input")?.value?.trim() || "/srv";
+        try {
+            const resp = await fetch(`/api/git/status?cwd=${encodeURIComponent(cwd)}`);
+            const data = await resp.json();
+            $("git-branch-badge").textContent = data.branch || "-";
+
+            const filesList = $("git-files-list");
+            filesList.innerHTML = "";
+            if (!data.files || data.files.length === 0) {
+                filesList.innerHTML = `<div class="field-hint">Arbre de travail propre (0 fichier modifié)</div>`;
+            } else {
+                data.files.forEach((f) => {
+                    const row = document.createElement("div");
+                    row.className = "git-file-row";
+                    row.innerHTML = `
+                        <span><strong style="color:var(--accent);">${escapeHtml(f.status)}</strong> ${escapeHtml(f.path)}</span>
+                        <button class="btn btn-danger btn-sm" data-revert-file="${escapeHtml(f.path)}">↩ Revert</button>
+                    `;
+                    filesList.appendChild(row);
+                });
+                filesList.querySelectorAll("button[data-revert-file]").forEach((b) => {
+                    b.addEventListener("click", async () => {
+                        const file = b.getAttribute("data-revert-file");
+                        await fetch("/api/git/revert", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ cwd, file }),
+                        });
+                        await loadGitStatus();
+                    });
+                });
+            }
+
+            const recentEl = $("git-recent-commits");
+            recentEl.innerHTML = "";
+            (data.recent_commits || []).forEach((c) => {
+                const d = document.createElement("div");
+                d.className = "session-item";
+                d.textContent = c;
+                recentEl.appendChild(d);
+            });
+
+            renderHighlightedDiff(data.diff || "");
+        } catch (err) {
+            $("git-diff-viewer").textContent = `Erreur Git: ${err.message}`;
+        }
+    }
+
+    $("btn-git-refresh")?.addEventListener("click", loadGitStatus);
+
+    $("btn-git-commit")?.addEventListener("click", async () => {
+        const cwd = $("git-cwd-input").value.trim() || "/srv";
+        const message = $("git-commit-msg").value.trim();
+        if (!message) return;
+        const resp = await fetch("/api/git/commit", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ cwd, message }),
+        });
+        const data = await resp.json();
+        logRpc("in", "git:commit", data);
+        $("git-commit-msg").value = "";
+        await loadGitStatus();
+    });
+
+    $("btn-git-revert-all")?.addEventListener("click", async () => {
+        const cwd = $("git-cwd-input").value.trim() || "/srv";
+        await fetch("/api/git/revert", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ cwd, file: "." }),
+        });
+        await loadGitStatus();
+    });
+
     $("btn-refresh-all").addEventListener("click", () => {
         loadInstances();
         loadChannels();
+        loadGitStatus();
     });
 
     $("btn-clear-rpc").addEventListener("click", () => ($("rpc-log").innerHTML = ""));
 
     // Init
-    loadInstances().then(loadChannels);
+    loadRolePresets()
+        .then(loadInstances)
+        .then(loadChannels);
     setInterval(loadInstances, 15000);
 })();

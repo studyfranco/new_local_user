@@ -183,6 +183,23 @@ assert_contains "POST /api/agents/ask queries specific CLI instance" "$ASK_OUT" 
 WEB_PROXY_OUT="$(curl -fsS "${BASE_URL}/api/instances/${NEW_ID}/web")"
 assert_contains "GET /api/instances/{id}/web proxies native CLI web server" "$WEB_PROXY_OUT" "Native CLI Web UI Ready"
 
+# 3.5b Roles Presets, Role Update, Agent Onboarding & Git Status
+ROLES_OUT="$(curl -fsS "${BASE_URL}/api/roles/presets")"
+assert_contains "GET /api/roles/presets returns role catalog" "$ROLES_OUT" '"id":"architect"'
+
+ROLE_UPD_OUT="$(curl -fsS -X PUT "${BASE_URL}/api/instances/${NEW_ID}" \
+    -H "Content-Type: application/json" \
+    -d '{"role":"architect","role_prompt":"Tu es l Architecte Audio."}')"
+assert_contains "PUT /api/instances/{id} updates role and role_prompt" "$ROLE_UPD_OUT" '"role":"architect"'
+
+ONBOARD_OUT="$(curl -fsS -X POST "${BASE_URL}/api/instances/${NEW_ID}/onboard" \
+    -H "Content-Type: application/json" \
+    -d '{"channel_name":"audio-pipeline"}')"
+assert_contains "POST /api/instances/{id}/onboard sends role prompt to CLI" "$ONBOARD_OUT" "MockAgentReply"
+
+GIT_STATUS_OUT="$(curl -fsS "${BASE_URL}/api/git/status?cwd=${PROJECT_ROOT}")"
+assert_contains "GET /api/git/status inspects workspace git repository" "$GIT_STATUS_OUT" '"branch":'
+
 # 3.6 Multi-Agent Orchestration Channels
 CHAN_CREATE_OUT="$(curl -fsS -X POST "${BASE_URL}/api/orchestration/channels" \
     -H "Content-Type: application/json" \
@@ -198,6 +215,17 @@ assert_contains "POST /api/orchestration/channels/{id}/publish dispatches to cha
 
 MSGS_OUT="$(curl -fsS "${BASE_URL}/api/orchestration/channels/${CHAN_ID}/messages")"
 assert_contains "GET /api/orchestration/channels/{id}/messages returns persisted history" "$MSGS_OUT" "Antigravity #2 - Bibliothèque Musicale"
+
+RETENTION_OUT="$(curl -fsS -X PUT "${BASE_URL}/api/orchestration/channels/${CHAN_ID}" \
+    -H "Content-Type: application/json" \
+    -d '{"retention_days":7,"max_messages":50}')"
+assert_contains "PUT /api/orchestration/channels/{id} updates configurable retention" "$RETENTION_OUT" '"retention_days":7'
+
+PRUNE_OUT="$(curl -fsS -X POST "${BASE_URL}/api/orchestration/channels/${CHAN_ID}/prune")"
+assert_contains "POST /api/orchestration/channels/{id}/prune enforces retention policy" "$PRUNE_OUT" '"pruned_messages":'
+
+EXPORT_OUT="$(curl -fsS "${BASE_URL}/api/orchestration/channels/${CHAN_ID}/export")"
+assert_contains "GET /api/orchestration/channels/{id}/export exports channel as Markdown" "$EXPORT_OUT" "# Canal d'orchestration : #audio-pipeline"
 
 DEL_CHAN_OUT="$(curl -fsS -X DELETE "${BASE_URL}/api/orchestration/channels/${CHAN_ID}")"
 assert_contains "DELETE /api/orchestration/channels/{id} removes channel" "$DEL_CHAN_OUT" '"deleted":true'

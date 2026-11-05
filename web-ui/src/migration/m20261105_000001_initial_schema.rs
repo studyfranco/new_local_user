@@ -11,6 +11,8 @@ pub enum CliInstances {
     BridgeUrl,
     SecretToken,
     DefaultCwd,
+    Role,
+    RolePrompt,
     CreatedAt,
     UpdatedAt,
 }
@@ -22,6 +24,8 @@ pub enum OrchestrationChannels {
     Name,
     Description,
     ParticipantIdsJson,
+    RetentionDays,
+    MaxMessages,
     CreatedAt,
 }
 
@@ -66,6 +70,18 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(CliInstances::SecretToken).string().null())
                     .col(ColumnDef::new(CliInstances::DefaultCwd).string().not_null())
                     .col(
+                        ColumnDef::new(CliInstances::Role)
+                            .string()
+                            .not_null()
+                            .default("developer"),
+                    )
+                    .col(
+                        ColumnDef::new(CliInstances::RolePrompt)
+                            .text()
+                            .not_null()
+                            .default(""),
+                    )
+                    .col(
                         ColumnDef::new(CliInstances::CreatedAt)
                             .timestamp_with_time_zone()
                             .not_null(),
@@ -105,6 +121,18 @@ impl MigrationTrait for Migration {
                         ColumnDef::new(OrchestrationChannels::ParticipantIdsJson)
                             .text()
                             .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(OrchestrationChannels::RetentionDays)
+                            .integer()
+                            .not_null()
+                            .default(30),
+                    )
+                    .col(
+                        ColumnDef::new(OrchestrationChannels::MaxMessages)
+                            .integer()
+                            .not_null()
+                            .default(200),
                     )
                     .col(
                         ColumnDef::new(OrchestrationChannels::CreatedAt)

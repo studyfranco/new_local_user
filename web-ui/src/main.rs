@@ -22,7 +22,8 @@ use chrono::Utc;
 use entities::{channel_message, cli_instance, orchestration_channel};
 use futures_util::{SinkExt, StreamExt};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter, QueryOrder,
+    Set,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -131,6 +132,8 @@ struct CreateInstanceRequest {
     bridge_url: Option<String>,
     secret_token: Option<String>,
     default_cwd: Option<String>,
+    role: Option<String>,
+    role_prompt: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -142,6 +145,32 @@ struct UpdateInstanceRequest {
     bridge_url: Option<String>,
     secret_token: Option<String>,
     default_cwd: Option<String>,
+    role: Option<String>,
+    role_prompt: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct OnboardInstanceRequest {
+    channel_name: Option<String>,
+    custom_prompt: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct GitStatusQuery {
+    cwd: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct GitCommitRequest {
+    cwd: Option<String>,
+    message: String,
+    files: Option<Vec<String>>,
+}
+
+#[derive(Deserialize)]
+struct GitRevertRequest {
+    cwd: Option<String>,
+    file: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -156,6 +185,8 @@ struct CreateChannelRequest {
     name: String,
     description: Option<String>,
     participant_ids: Option<Vec<Uuid>>,
+    retention_days: Option<i32>,
+    max_messages: Option<i32>,
 }
 
 #[derive(Deserialize)]
@@ -163,6 +194,8 @@ struct UpdateChannelRequest {
     name: Option<String>,
     description: Option<String>,
     participant_ids: Option<Vec<Uuid>>,
+    retention_days: Option<i32>,
+    max_messages: Option<i32>,
 }
 
 #[derive(Deserialize)]
@@ -252,7 +285,7 @@ async fn main() {
 
     let default_cwd = env::var("DEFAULT_CWD").unwrap_or_else(|_| "/srv".to_string());
 
-    let db = db::connect_and_migrate(
+    let db = match db::connect_and_migrate(
         &database_url,
         &codex_ws_url,
         &goose_ws_url,
@@ -262,12 +295,24 @@ async fn main() {
         &default_cwd,
     )
     .await
-    .expect("Failed to connect and migrate database");
+    {
+        Ok(conn) => conn,
+        Err(e) => {
+            error!("Failed to connect and migrate database: {}", e);
+            return;
+        }
+    };
 
-    let http_client = reqwest::Client::builder()
+    let http_client = match reqwest::Client::builder()
         .timeout(Duration::from_secs(300))
         .build()
-        .expect("Failed to initialize HTTP client");
+    {
+        Ok(client) => client,
+        Err(e) => {
+            error!("Failed to initialize HTTP client: {}", e);
+            return;
+        }
+    };
 
     let state = Arc::new(AppState {
         db,
@@ -292,12 +337,16 @@ async fn main() {
         addr, database_url
     );
 
-    let listener = tokio::net::TcpListener::bind(addr)
-        .await
-        .expect("Failed to bind TCP listener");
-    axum::serve(listener, app)
-        .await
-        .expect("Server terminated unexpectedly");
+    let listener = match tokio::net::TcpListener::bind(addr).await {
+        Ok(l) => l,
+        Err(e) => {
+            error!("Failed to bind TCP listener on {}: {}", addr, e);
+            return;
+        }
+    };
+    if let Err(e) = axum::serve(listener, app).await {
+        error!("Server terminated with error: {}", e);
+    }
 }
 
 pub fn build_router(state: Arc<AppState>) -> Router {
@@ -309,7 +358,8 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/ready", get(serve_ready))
         .route("/api/config", get(serve_config))
         .route("/api/status", get(serve_status))
-        // CLI Instances CRUD & Auth
+        // CLI Instances CRUD, Roles, Native Terminal & Auth
+        .route("/api/roles/presets", get(list_role_presets))
         .route(
             "/api/instances",
             get(list_instances).post(create_instance),
@@ -319,11 +369,17 @@ pub fn build_router(state: Arc<AppState>) -> Router {
             get(get_instance).put(update_instance).delete(delete_instance),
         )
         .route("/api/instances/{id}/auth", post(instance_auth_handler))
+        .route("/api/instances/{id}/onboard", post(onboard_instance_handler))
+        .route("/ws/instances/{id}/terminal", get(ws_instance_terminal_handler))
         .route("/api/instances/{id}/web", any(proxy_instance_web_root))
         .route(
             "/api/instances/{id}/web/{*path}",
             any(proxy_instance_web_path),
         )
+        // Git Diff, Status, Commit & Revert
+        .route("/api/git/status", get(handle_git_status))
+        .route("/api/git/commit", post(handle_git_commit))
+        .route("/api/git/revert", post(handle_git_revert))
         // Unified Agent Ask & Tmux
         .route("/api/agents/ask", post(handle_agent_ask))
         .route("/api/agents/tmux", post(handle_agent_tmux))
@@ -343,6 +399,14 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route(
             "/api/orchestration/channels/{id}/publish",
             post(publish_channel_message),
+        )
+        .route(
+            "/api/orchestration/channels/{id}/prune",
+            post(prune_channel_messages),
+        )
+        .route(
+            "/api/orchestration/channels/{id}/export",
+            get(export_channel_markdown),
         )
         .route("/ws/orchestration/{id}", get(ws_orchestration_handler))
         // Direct WebSocket & HTTP Bridges
@@ -574,6 +638,19 @@ async fn create_instance(
         }
     });
 
+    let role = req
+        .role
+        .as_deref()
+        .map(|r| r.trim().to_lowercase())
+        .filter(|r| !r.is_empty())
+        .unwrap_or_else(|| "developer".to_string());
+    let role_prompt = req
+        .role_prompt
+        .as_deref()
+        .map(|p| p.trim().to_string())
+        .filter(|p| !p.is_empty())
+        .unwrap_or_else(|| db::default_role_prompt(&role).to_string());
+
     let active = cli_instance::ActiveModel {
         id: Set(Uuid::new_v4()),
         name: Set(req.name.trim().to_string()),
@@ -583,6 +660,8 @@ async fn create_instance(
         bridge_url: Set(bridge_url),
         secret_token: Set(req.secret_token.filter(|s| !s.trim().is_empty())),
         default_cwd: Set(req.default_cwd.unwrap_or_else(|| state.default_cwd.clone())),
+        role: Set(role),
+        role_prompt: Set(role_prompt),
         created_at: Set(now),
         updated_at: Set(now),
     };
@@ -646,6 +725,18 @@ async fn update_instance(
     }
     if let Some(default_cwd) = req.default_cwd {
         active.default_cwd = Set(default_cwd.trim().to_string());
+    }
+    if let Some(role) = req.role {
+        let r = role.trim().to_lowercase();
+        if !r.is_empty() {
+            active.role = Set(r.clone());
+            if req.role_prompt.is_none() {
+                active.role_prompt = Set(db::default_role_prompt(&r).to_string());
+            }
+        }
+    }
+    if let Some(role_prompt) = req.role_prompt {
+        active.role_prompt = Set(role_prompt.trim().to_string());
     }
     active.updated_at = Set(Utc::now());
 
@@ -723,13 +814,13 @@ async fn instance_auth_handler(
     };
 
     // If API key is provided, also store it in the instance's secret_token column
-    if req.action == "api_key" {
-        if let Some(ref key_val) = req.value {
-            let mut active: cli_instance::ActiveModel = inst.clone().into();
-            active.secret_token = Set(Some(key_val.clone()));
-            active.updated_at = Set(Utc::now());
-            let _ = active.update(&state.db).await;
-        }
+    if req.action == "api_key"
+        && let Some(ref key_val) = req.value
+    {
+        let mut active: cli_instance::ActiveModel = inst.clone().into();
+        active.secret_token = Set(Some(key_val.clone()));
+        active.updated_at = Set(Utc::now());
+        let _ = active.update(&state.db).await;
     }
 
     if rpc_url.starts_with("http://") || rpc_url.starts_with("https://") {
@@ -740,28 +831,30 @@ async fn instance_auth_handler(
             "params": params,
         });
         let mut builder = state.http_client.post(&rpc_url).json(&payload);
-        if let Some(ref sec) = inst.secret_token.as_ref().or(state.bridge_secret.as_ref()) {
-            builder = builder.header("X-Secret-Key", *sec);
+        if let Some(sec) = inst.secret_token.as_ref().or(state.bridge_secret.as_ref()) {
+            builder = builder.header("X-Secret-Key", sec);
         }
-        if let Ok(resp) = builder.send().await {
-            if let Ok(val) = resp.json::<Value>().await {
-                return (
-                    StatusCode::OK,
-                    Json(json!({
-                        "instance_id": id,
-                        "name": inst.name,
-                        "kind": inst.kind,
-                        "auth": val["result"]
-                    })),
-                );
-            }
+        if let Ok(resp) = builder.send().await
+            && let Ok(val) = resp.json::<Value>().await
+        {
+            return (
+                StatusCode::OK,
+                Json(json!({
+                    "instance_id": id,
+                    "name": inst.name,
+                    "kind": inst.kind,
+                    "auth": val["result"]
+                })),
+            );
         }
     }
 
     // Fallback for Codex WebSocket app-server if bridge HTTP is not reachable
-    if inst.kind == "codex" && inst.endpoint_url.starts_with("ws") {
-        if let Ok((mut ws, _)) = connect_async(&inst.endpoint_url).await {
-            let _ = ws
+    if inst.kind == "codex"
+        && inst.endpoint_url.starts_with("ws")
+        && let Ok((mut ws, _)) = connect_async(&inst.endpoint_url).await
+    {
+        let _ = ws
                 .send(TungMessage::Text(
                     json!({
                         "jsonrpc": "2.0",
@@ -809,7 +902,6 @@ async fn instance_auth_handler(
                     })),
                 );
             }
-        }
     }
 
     (
@@ -979,6 +1071,8 @@ async fn create_channel(
         name: Set(req.name.trim().to_string()),
         description: Set(req.description),
         participant_ids_json: Set(ids_json),
+        retention_days: Set(req.retention_days.unwrap_or(30).max(0)),
+        max_messages: Set(req.max_messages.unwrap_or(200).max(0)),
         created_at: Set(Utc::now()),
     };
 
@@ -1026,9 +1120,18 @@ async fn update_channel(
         active.participant_ids_json =
             Set(serde_json::to_string(&ids).unwrap_or_else(|_| "[]".to_string()));
     }
+    if let Some(days) = req.retention_days {
+        active.retention_days = Set(days.max(0));
+    }
+    if let Some(max_m) = req.max_messages {
+        active.max_messages = Set(max_m.max(0));
+    }
 
     match active.update(&state.db).await {
-        Ok(updated) => (StatusCode::OK, Json(json!(updated))),
+        Ok(updated) => {
+            let _ = apply_channel_retention(&state, &updated).await;
+            (StatusCode::OK, Json(json!(updated)))
+        }
         Err(e) => (
             StatusCode::BAD_REQUEST,
             Json(json!({ "error": e.to_string() })),
@@ -1198,13 +1301,18 @@ async fn publish_channel_message(
             if Some(inst.id) == req.sender_instance_id || inst.name == sender_name {
                 continue;
             }
+            let role_instruction = if inst.role_prompt.trim().is_empty() {
+                db::default_role_prompt(&inst.role).to_string()
+            } else {
+                inst.role_prompt.clone()
+            };
             let prompt_for_agent = format!(
-                "{}\n---\nTu es l'agent '{}' ({}). Réponds sur le canal '{}' (tu peux mentionner un autre agent avec @NomAgent si besoin) :",
-                running_context, inst.name, inst.kind, channel.name
+                "[Système — Identité & Rôle]\nAgent : {} (CLI: {}, Rôle: {})\nMission : {}\n\n---\n{}\n---\nRéponds sur le canal '{}' en respectant ton rôle '{}' (tu peux mentionner un autre agent avec @NomAgent si besoin) :",
+                inst.name, inst.kind, inst.role, role_instruction, running_context, channel.name, inst.role
             );
 
-            if let Ok(reply_text) = ask_instance_model(&state, inst, &prompt_for_agent, None, "auto").await {
-                if let Ok(saved_reply) = persist_and_broadcast_channel_msg(
+            if let Ok(reply_text) = ask_instance_model(&state, inst, &prompt_for_agent, None, "auto").await
+                && let Ok(saved_reply) = persist_and_broadcast_channel_msg(
                     &state,
                     channel_id,
                     Some(inst.id),
@@ -1213,13 +1321,14 @@ async fn publish_channel_message(
                     &reply_text,
                 )
                 .await
-                {
-                    running_context.push_str(&format!("\n[Réponse de {}] :\n{}\n", inst.name, reply_text));
-                    replies.push(saved_reply);
-                }
+            {
+                running_context.push_str(&format!("\n[Réponse de {}] :\n{}\n", inst.name, reply_text));
+                replies.push(saved_reply);
             }
         }
     }
+
+    let _ = apply_channel_retention(&state, &channel).await;
 
     (
         StatusCode::OK,
@@ -1227,6 +1336,131 @@ async fn publish_channel_message(
             "message": initial_msg,
             "replies": replies
         })),
+    )
+}
+
+async fn apply_channel_retention(
+    state: &AppState,
+    channel: &orchestration_channel::Model,
+) -> Result<u64, DbErr> {
+    let mut removed: u64 = 0;
+
+    // 1. Delete messages older than retention_days (if > 0)
+    if channel.retention_days > 0 {
+        let cutoff = Utc::now() - chrono::Duration::days(channel.retention_days as i64);
+        let res = channel_message::Entity::delete_many()
+            .filter(channel_message::Column::ChannelId.eq(channel.id))
+            .filter(channel_message::Column::CreatedAt.lt(cutoff))
+            .exec(&state.db)
+            .await?;
+        removed += res.rows_affected;
+    }
+
+    // 2. Enforce max_messages cap (if > 0)
+    if channel.max_messages > 0 {
+        let all = channel_message::Entity::find()
+            .filter(channel_message::Column::ChannelId.eq(channel.id))
+            .order_by_asc(channel_message::Column::CreatedAt)
+            .all(&state.db)
+            .await?;
+        let max_cap = channel.max_messages as usize;
+        if all.len() > max_cap {
+            let excess = all.len() - max_cap;
+            for old_msg in all.into_iter().take(excess) {
+                let r = channel_message::Entity::delete_by_id(old_msg.id)
+                    .exec(&state.db)
+                    .await?;
+                removed += r.rows_affected;
+            }
+        }
+    }
+
+    Ok(removed)
+}
+
+async fn prune_channel_messages(
+    State(state): State<Arc<AppState>>,
+    Path(channel_id): Path<Uuid>,
+) -> impl IntoResponse {
+    let Some(channel) = orchestration_channel::Entity::find_by_id(channel_id)
+        .one(&state.db)
+        .await
+        .ok()
+        .flatten()
+    else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Canal introuvable" })),
+        );
+    };
+
+    match apply_channel_retention(&state, &channel).await {
+        Ok(pruned) => (
+            StatusCode::OK,
+            Json(json!({
+                "channel_id": channel.id,
+                "retention_days": channel.retention_days,
+                "max_messages": channel.max_messages,
+                "pruned_messages": pruned
+            })),
+        ),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        ),
+    }
+}
+
+async fn export_channel_markdown(
+    State(state): State<Arc<AppState>>,
+    Path(channel_id): Path<Uuid>,
+) -> impl IntoResponse {
+    let Some(channel) = orchestration_channel::Entity::find_by_id(channel_id)
+        .one(&state.db)
+        .await
+        .ok()
+        .flatten()
+    else {
+        return (
+            StatusCode::NOT_FOUND,
+            [("content-type", "text/plain; charset=utf-8")],
+            "Canal introuvable".to_string(),
+        );
+    };
+
+    let msgs = channel_message::Entity::find()
+        .filter(channel_message::Column::ChannelId.eq(channel_id))
+        .order_by_asc(channel_message::Column::CreatedAt)
+        .all(&state.db)
+        .await
+        .unwrap_or_default();
+
+    let mut md = format!(
+        "# Canal d'orchestration : #{}\n\n\
+        - **Description** : {}\n\
+        - **Politique de rétention** : {} jours / max {} messages\n\
+        - **Messages exportés** : {}\n\n---\n\n",
+        channel.name,
+        channel.description.as_deref().unwrap_or("Aucune"),
+        channel.retention_days,
+        channel.max_messages,
+        msgs.len()
+    );
+
+    for m in msgs {
+        md.push_str(&format!(
+            "### [{}] **{}** → `{}`\n\n{}\n\n---\n\n",
+            m.created_at.format("%Y-%m-%d %H:%M:%S UTC"),
+            m.sender_name,
+            m.recipient_name,
+            m.content
+        ));
+    }
+
+    (
+        StatusCode::OK,
+        [("content-type", "text/markdown; charset=utf-8")],
+        md,
     )
 }
 
@@ -1286,10 +1520,10 @@ async fn resolve_instance(
     instance_id: Option<Uuid>,
     agent_str: Option<&str>,
 ) -> Option<cli_instance::Model> {
-    if let Some(id) = instance_id {
-        if let Ok(Some(m)) = cli_instance::Entity::find_by_id(id).one(&state.db).await {
-            return Some(m);
-        }
+    if let Some(id) = instance_id
+        && let Ok(Some(m)) = cli_instance::Entity::find_by_id(id).one(&state.db).await
+    {
+        return Some(m);
     }
     if let Some(ag) = agent_str {
         let lower = ag.trim().to_lowercase();
@@ -1405,8 +1639,8 @@ async fn handle_agent_tmux(
     });
 
     let mut builder = state.http_client.post(url).json(&payload);
-    if let Some(ref sec) = inst.secret_token.as_ref().or(state.bridge_secret.as_ref()) {
-        builder = builder.header("X-Secret-Key", *sec);
+    if let Some(sec) = inst.secret_token.as_ref().or(state.bridge_secret.as_ref()) {
+        builder = builder.header("X-Secret-Key", sec);
     }
 
     match builder.send().await {
@@ -1514,15 +1748,15 @@ async fn ask_codex_oneshot(ws_url: &str, prompt: &str, cwd: &str) -> Result<Stri
 
     let mut thread_id = "default".to_string();
     while let Some(Ok(TungMessage::Text(txt))) = ws.next().await {
-        if let Ok(v) = serde_json::from_str::<Value>(&txt) {
-            if v.get("id") == Some(&json!(2)) {
-                thread_id = v["result"]["thread"]["id"]
-                    .as_str()
-                    .or_else(|| v["result"]["threadId"].as_str())
-                    .unwrap_or("default")
-                    .to_string();
-                break;
-            }
+        if let Ok(v) = serde_json::from_str::<Value>(&txt)
+            && v.get("id") == Some(&json!(2))
+        {
+            thread_id = v["result"]["thread"]["id"]
+                .as_str()
+                .or_else(|| v["result"]["threadId"].as_str())
+                .unwrap_or("default")
+                .to_string();
+            break;
         }
     }
 
@@ -1550,9 +1784,9 @@ async fn ask_codex_oneshot(ws_url: &str, prompt: &str, cwd: &str) -> Result<Stri
                 if let Some(delta) = v["params"]["delta"].as_str() {
                     collected.push_str(delta);
                 }
-            } else if method == "turn/completed" {
-                break;
-            } else if v.get("id") == Some(&json!(3)) && !collected.is_empty() {
+            } else if method == "turn/completed"
+                || (v.get("id") == Some(&json!(3)) && !collected.is_empty())
+            {
                 break;
             }
         }
@@ -1571,10 +1805,10 @@ async fn ask_goose_oneshot(
         .into_client_request()
         .map_err(|e| e.to_string())?;
 
-    if let Some(token) = secret {
-        if let Ok(val) = token.parse() {
-            req.headers_mut().insert("X-Secret-Key", val);
-        }
+    if let Some(token) = secret
+        && let Ok(val) = token.parse()
+    {
+        req.headers_mut().insert("X-Secret-Key", val);
     }
 
     let (mut ws, _) = connect_async(req)
@@ -1614,14 +1848,14 @@ async fn ask_goose_oneshot(
 
     let mut session_id = "default".to_string();
     while let Some(Ok(TungMessage::Text(txt))) = ws.next().await {
-        if let Ok(v) = serde_json::from_str::<Value>(&txt) {
-            if v.get("id") == Some(&json!(2)) {
-                session_id = v["result"]["sessionId"]
-                    .as_str()
-                    .unwrap_or("default")
-                    .to_string();
-                break;
-            }
+        if let Ok(v) = serde_json::from_str::<Value>(&txt)
+            && v.get("id") == Some(&json!(2))
+        {
+            session_id = v["result"]["sessionId"]
+                .as_str()
+                .unwrap_or("default")
+                .to_string();
+            break;
         }
     }
 
@@ -1646,10 +1880,10 @@ async fn ask_goose_oneshot(
         if let Ok(v) = serde_json::from_str::<Value>(&txt) {
             if v["method"].as_str() == Some("session/update") {
                 let upd = &v["params"]["update"];
-                if upd["sessionUpdate"].as_str() == Some("agent_message_chunk") {
-                    if let Some(t) = upd["content"]["text"].as_str() {
-                        collected.push_str(t);
-                    }
+                if upd["sessionUpdate"].as_str() == Some("agent_message_chunk")
+                    && let Some(t) = upd["content"]["text"].as_str()
+                {
+                    collected.push_str(t);
                 }
             } else if v.get("id") == Some(&json!(3)) {
                 break;
@@ -1679,14 +1913,14 @@ async fn handle_codex_ws(
     let mut mode = query.mode.clone().unwrap_or_else(|| "ws".to_string());
     let mut target = query.target.clone().unwrap_or_default();
 
-    if let Some(id) = query.instance_id {
-        if let Ok(Some(inst)) = cli_instance::Entity::find_by_id(id).one(&state.db).await {
-            if query.mode.is_none() {
-                mode = inst.transport;
-            }
-            if target.trim().is_empty() {
-                target = inst.endpoint_url;
-            }
+    if let Some(id) = query.instance_id
+        && let Ok(Some(inst)) = cli_instance::Entity::find_by_id(id).one(&state.db).await
+    {
+        if query.mode.is_none() {
+            mode = inst.transport;
+        }
+        if target.trim().is_empty() {
+            target = inst.endpoint_url;
         }
     }
 
@@ -1751,14 +1985,14 @@ async fn handle_goose_ws(
     let mut target_url = query.target.clone().unwrap_or_default();
     let mut secret = query.token.clone().filter(|s| !s.trim().is_empty());
 
-    if let Some(id) = query.instance_id {
-        if let Ok(Some(inst)) = cli_instance::Entity::find_by_id(id).one(&state.db).await {
-            if target_url.trim().is_empty() {
-                target_url = inst.endpoint_url;
-            }
-            if secret.is_none() {
-                secret = inst.secret_token;
-            }
+    if let Some(id) = query.instance_id
+        && let Ok(Some(inst)) = cli_instance::Entity::find_by_id(id).one(&state.db).await
+    {
+        if target_url.trim().is_empty() {
+            target_url = inst.endpoint_url;
+        }
+        if secret.is_none() {
+            secret = inst.secret_token;
         }
     }
 
@@ -1819,15 +2053,15 @@ async fn proxy_goose_http(
     let url = format!("{}/{}", state.goose_http_url, path.trim_start_matches('/'));
     let mut req = state.http_client.request(method, &url).body(body.to_vec());
 
-    if let Some(ct) = headers.get("content-type") {
-        if let Ok(ct_str) = ct.to_str() {
-            req = req.header("Content-Type", ct_str);
-        }
+    if let Some(ct) = headers.get("content-type")
+        && let Ok(ct_str) = ct.to_str()
+    {
+        req = req.header("Content-Type", ct_str);
     }
-    if let Some(accept) = headers.get("accept") {
-        if let Ok(acc_str) = accept.to_str() {
-            req = req.header("Accept", acc_str);
-        }
+    if let Some(accept) = headers.get("accept")
+        && let Ok(acc_str) = accept.to_str()
+    {
+        req = req.header("Accept", acc_str);
     }
 
     let secret = headers
@@ -1979,5 +2213,440 @@ async fn bridge_ws_to_unix(client_ws: WebSocket, unix_stream: UnixStream) {
     tokio::select! {
         _ = client_to_unix => {},
         _ = unix_to_client => {},
+    }
+}
+
+// ============================================================================
+// ROLES PRESETS & AGENT ONBOARDING (/api/roles/presets, /api/instances/{id}/onboard)
+// ============================================================================
+async fn list_role_presets() -> impl IntoResponse {
+    let presets = json!([
+        {
+            "id": "architect",
+            "label": "🏗️ Architecte Logiciel",
+            "prompt": db::default_role_prompt("architect")
+        },
+        {
+            "id": "developer",
+            "label": "💻 Développeur Principal",
+            "prompt": db::default_role_prompt("developer")
+        },
+        {
+            "id": "reviewer",
+            "label": "🔍 Code Reviewer & Qualité",
+            "prompt": db::default_role_prompt("reviewer")
+        },
+        {
+            "id": "tester",
+            "label": "🧪 Ingénieur QA & Tests E2E",
+            "prompt": db::default_role_prompt("tester")
+        },
+        {
+            "id": "security",
+            "label": "🛡️ Auditeur Sécurité & DevSecOps",
+            "prompt": db::default_role_prompt("security")
+        },
+        {
+            "id": "general",
+            "label": "🤖 Agent Polyvalent",
+            "prompt": db::default_role_prompt("general")
+        }
+    ]);
+    (StatusCode::OK, Json(presets))
+}
+
+async fn onboard_instance_handler(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<Uuid>,
+    Json(req): Json<OnboardInstanceRequest>,
+) -> impl IntoResponse {
+    let Some(inst) = cli_instance::Entity::find_by_id(id)
+        .one(&state.db)
+        .await
+        .ok()
+        .flatten()
+    else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Instance introuvable" })),
+        );
+    };
+
+    let channel_name = req.channel_name.unwrap_or_else(|| "general".to_string());
+    let base_role_prompt = req
+        .custom_prompt
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| {
+            if inst.role_prompt.trim().is_empty() {
+                db::default_role_prompt(&inst.role).to_string()
+            } else {
+                inst.role_prompt.clone()
+            }
+        });
+
+    let onboarding_prompt = format!(
+        "[INITIALISATION D'AGENT — SIMPLY AGENT HUB]\n\
+        1. Ton identité : Tu es l'instance '{}' (moteur CLI : '{}', dossier de travail : '{}').\n\
+        2. Ton rôle attribué : '{}'.\n\
+        3. Ta mission & tes consignes :\n{}\n\
+        4. Fonctionnement de l'orchestration :\n\
+        - Tu es connecté au canal d'orchestration '{}'.\n\
+        - Tu peux interpeller un autre agent du collectif avec @NomAgent.\n\
+        Confirme en une phrase concise que tu as bien pris connaissance de ton identité et de ton rôle '{}'.",
+        inst.name, inst.kind, inst.default_cwd, inst.role, base_role_prompt, channel_name, inst.role
+    );
+
+    match ask_instance_model(&state, &inst, &onboarding_prompt, None, "auto").await {
+        Ok(reply) => (
+            StatusCode::OK,
+            Json(json!({
+                "instance_id": inst.id,
+                "name": inst.name,
+                "role": inst.role,
+                "onboarding_prompt": onboarding_prompt,
+                "reply": reply
+            })),
+        ),
+        Err(err) => (
+            StatusCode::BAD_GATEWAY,
+            Json(json!({
+                "instance_id": inst.id,
+                "name": inst.name,
+                "role": inst.role,
+                "error": err
+            })),
+        ),
+    }
+}
+
+// ============================================================================
+// NATIVE INTERACTIVE TERMINAL WEBSOCKET (/ws/instances/{id}/terminal)
+// ============================================================================
+async fn ws_instance_terminal_handler(
+    ws: WebSocketUpgrade,
+    Path(id): Path<Uuid>,
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    ws.on_upgrade(move |socket| handle_instance_terminal_ws(socket, id, state))
+}
+
+async fn fetch_instance_tmux_ansi(state: &AppState, inst: &cli_instance::Model) -> Result<String, String> {
+    let url = inst.bridge_url.as_deref().unwrap_or(&inst.endpoint_url);
+    let payload = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tmux/capture",
+        "params": { "lines": 120, "ansi": true }
+    });
+    let mut builder = state.http_client.post(url).json(&payload);
+    if let Some(sec) = inst.secret_token.as_ref().or(state.bridge_secret.as_ref()) {
+        builder = builder.header("X-Secret-Key", sec);
+    }
+    let resp = builder.send().await.map_err(|e| e.to_string())?;
+    let val: Value = resp.json().await.map_err(|e| e.to_string())?;
+    Ok(val["result"]["output"].as_str().unwrap_or("").to_string())
+}
+
+async fn send_instance_tmux_input(
+    state: &AppState,
+    inst: &cli_instance::Model,
+    method: &str,
+    params: Value,
+) -> Result<String, String> {
+    let url = inst.bridge_url.as_deref().unwrap_or(&inst.endpoint_url);
+    let payload = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": method,
+        "params": params
+    });
+    let mut builder = state.http_client.post(url).json(&payload);
+    if let Some(sec) = inst.secret_token.as_ref().or(state.bridge_secret.as_ref()) {
+        builder = builder.header("X-Secret-Key", sec);
+    }
+    let resp = builder.send().await.map_err(|e| e.to_string())?;
+    let val: Value = resp.json().await.map_err(|e| e.to_string())?;
+    Ok(val["result"]["output"].as_str().unwrap_or("").to_string())
+}
+
+async fn handle_instance_terminal_ws(socket: WebSocket, id: Uuid, state: Arc<AppState>) {
+    let Some(inst) = cli_instance::Entity::find_by_id(id)
+        .one(&state.db)
+        .await
+        .ok()
+        .flatten()
+    else {
+        return;
+    };
+
+    let (mut ws_sink, mut ws_stream) = socket.split();
+    let (screen_tx, mut screen_rx) = tokio::sync::mpsc::channel::<String>(32);
+
+    // Initial screen capture
+    if let Ok(initial) = fetch_instance_tmux_ansi(&state, &inst).await {
+        let _ = screen_tx
+            .send(json!({ "type": "screen", "data": initial }).to_string())
+            .await;
+    }
+
+    let state_poll = state.clone();
+    let inst_poll = inst.clone();
+    let tx_poll = screen_tx.clone();
+    let poll_task = async move {
+        let mut last_screen = String::new();
+        loop {
+            tokio::time::sleep(Duration::from_millis(650)).await;
+            if let Ok(screen) = fetch_instance_tmux_ansi(&state_poll, &inst_poll).await
+                && screen != last_screen
+            {
+                last_screen = screen.clone();
+                if tx_poll
+                    .send(json!({ "type": "screen", "data": screen }).to_string())
+                    .await
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        }
+    };
+
+    let sink_task = async move {
+        while let Some(msg) = screen_rx.recv().await {
+            if ws_sink.send(AxumWsMessage::Text(msg.into())).await.is_err() {
+                break;
+            }
+        }
+    };
+
+    let state_in = state.clone();
+    let inst_in = inst.clone();
+    let tx_in = screen_tx.clone();
+    let input_task = async move {
+        while let Some(Ok(msg)) = ws_stream.next().await {
+            if let AxumWsMessage::Text(txt) = msg
+                && let Ok(v) = serde_json::from_str::<Value>(&txt)
+            {
+                let msg_type = v["type"].as_str().unwrap_or("line");
+                let updated = match msg_type {
+                    "raw" => {
+                        let data = v["data"].as_str().unwrap_or("");
+                        let special = v["special"].as_bool().unwrap_or(false);
+                        send_instance_tmux_input(
+                            &state_in,
+                            &inst_in,
+                            "tmux/send_raw",
+                            json!({ "data": data, "special": special }),
+                        )
+                        .await
+                    }
+                    "refresh" => fetch_instance_tmux_ansi(&state_in, &inst_in).await,
+                    _ => {
+                        let text = v["text"].as_str().or_else(|| v["data"].as_str()).unwrap_or("");
+                        send_instance_tmux_input(
+                            &state_in,
+                            &inst_in,
+                            "tmux/send_keys",
+                            json!({ "text": text }),
+                        )
+                        .await
+                    }
+                };
+                if let Ok(screen) = updated {
+                    let _ = tx_in
+                        .send(json!({ "type": "screen", "data": screen }).to_string())
+                        .await;
+                }
+            }
+        }
+    };
+
+    tokio::select! {
+        _ = poll_task => {},
+        _ = sink_task => {},
+        _ = input_task => {},
+    }
+}
+
+// ============================================================================
+// INTEGRATED GIT DIFF, STATUS, COMMIT & REVERT (/api/git/*)
+// ============================================================================
+fn resolve_git_cwd(state: &AppState, requested: Option<&str>) -> String {
+    let candidate = requested
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .unwrap_or(&state.default_cwd);
+    if FsPath::new(candidate).is_dir() {
+        candidate.to_string()
+    } else {
+        std::env::current_dir()
+            .ok()
+            .and_then(|p| p.to_str().map(|s| s.to_string()))
+            .unwrap_or_else(|| ".".to_string())
+    }
+}
+
+async fn handle_git_status(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<GitStatusQuery>,
+) -> impl IntoResponse {
+    let workdir = resolve_git_cwd(&state, query.cwd.as_deref());
+
+    let branch_out = tokio::process::Command::new("git")
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+        .current_dir(&workdir)
+        .output()
+        .await;
+    let branch = branch_out
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_else(|| "non-git".to_string());
+
+    let status_out = tokio::process::Command::new("git")
+        .args(["status", "--porcelain=v1"])
+        .current_dir(&workdir)
+        .output()
+        .await;
+
+    let mut files = Vec::new();
+    if let Ok(o) = status_out
+        && o.status.success()
+    {
+        for line in String::from_utf8_lossy(&o.stdout).lines() {
+            if line.len() >= 3 {
+                let status_code = line[0..2].trim().to_string();
+                let file_path = line[3..].trim().to_string();
+                files.push(json!({
+                    "status": if status_code.is_empty() { "M".to_string() } else { status_code },
+                    "path": file_path
+                }));
+            }
+        }
+    }
+
+    let diff_out = tokio::process::Command::new("git")
+        .args(["diff", "HEAD"])
+        .current_dir(&workdir)
+        .output()
+        .await;
+    let diff = diff_out
+        .ok()
+        .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+        .unwrap_or_default();
+
+    let log_out = tokio::process::Command::new("git")
+        .args(["log", "-n", "5", "--oneline"])
+        .current_dir(&workdir)
+        .output()
+        .await;
+    let recent_commits: Vec<String> = log_out
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| {
+            String::from_utf8_lossy(&o.stdout)
+                .lines()
+                .map(|l| l.to_string())
+                .collect()
+        })
+        .unwrap_or_default();
+
+    (
+        StatusCode::OK,
+        Json(json!({
+            "cwd": workdir,
+            "branch": branch,
+            "files": files,
+            "diff": diff,
+            "recent_commits": recent_commits
+        })),
+    )
+}
+
+async fn handle_git_commit(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<GitCommitRequest>,
+) -> impl IntoResponse {
+    if req.message.trim().is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "Le message de commit ne peut pas être vide" })),
+        );
+    }
+    let workdir = resolve_git_cwd(&state, req.cwd.as_deref());
+
+    if let Some(ref files) = req.files {
+        if !files.is_empty() {
+            let mut cmd = tokio::process::Command::new("git");
+            cmd.arg("add").args(files).current_dir(&workdir);
+            let _ = cmd.output().await;
+        } else {
+            let _ = tokio::process::Command::new("git")
+                .args(["add", "-A"])
+                .current_dir(&workdir)
+                .output()
+                .await;
+        }
+    } else {
+        let _ = tokio::process::Command::new("git")
+            .args(["add", "-A"])
+            .current_dir(&workdir)
+            .output()
+            .await;
+    }
+
+    let out = tokio::process::Command::new("git")
+        .args(["commit", "-m", req.message.trim()])
+        .current_dir(&workdir)
+        .output()
+        .await;
+
+    match out {
+        Ok(o) => {
+            let stdout = String::from_utf8_lossy(&o.stdout).trim().to_string();
+            let stderr = String::from_utf8_lossy(&o.stderr).trim().to_string();
+            (
+                StatusCode::OK,
+                Json(json!({
+                    "committed": o.status.success(),
+                    "cwd": workdir,
+                    "detail": if stdout.is_empty() { stderr } else { stdout }
+                })),
+            )
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        ),
+    }
+}
+
+async fn handle_git_revert(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<GitRevertRequest>,
+) -> impl IntoResponse {
+    let workdir = resolve_git_cwd(&state, req.cwd.as_deref());
+    let target = req.file.as_deref().unwrap_or(".");
+
+    let out = tokio::process::Command::new("git")
+        .args(["checkout", "--", target])
+        .current_dir(&workdir)
+        .output()
+        .await;
+
+    match out {
+        Ok(o) => (
+            StatusCode::OK,
+            Json(json!({
+                "reverted": o.status.success(),
+                "cwd": workdir,
+                "target": target,
+                "detail": String::from_utf8_lossy(&o.stderr).trim().to_string()
+            })),
+        ),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        ),
     }
 }

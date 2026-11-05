@@ -665,3 +665,89 @@ body {
     font-size: 0.84rem;
     cursor: pointer;
 }
+
+/* ─── Native Interactive Terminal (xterm.js + ANSI Tmux) ─── */
+.native-terminal-drawer {
+    background-color: #151719;
+    border: 1px solid var(--accent);
+    border-radius: var(--radius);
+    padding: 0.75rem;
+    margin-bottom: 0.85rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+
+.terminal-viewport {
+    background-color: #0e1012;
+    color: #eff0f1;
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    line-height: 1.4;
+    height: 310px;
+    overflow-y: auto;
+    padding: 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    outline: none;
+}
+
+.terminal-viewport:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(28, 220, 154, 0.25);
+}
+
+/* ─── Git Diff Viewer ─────────────────────────────────────── */
+.diff-viewer {
+    flex: 1;
+    overflow-y: auto;
+    background-color: #16191b;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.85rem;
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    line-height: 1.45;
+    white-space: pre;
+}
+
+.diff-line {
+    padding: 1px 6px;
+    border-radius: 3px;
+}
+
+.diff-add {
+    background-color: rgba(46, 204, 113, 0.14);
+    color: #58d68d;
+}
+
+.diff-del {
+    background-color: rgba(218, 68, 83, 0.16);
+    color: #ec7063;
+}
+
+.diff-hunk {
+    background-color: rgba(28, 220, 154, 0.12);
+    color: var(--accent);
+    font-weight: 600;
+}
+
+.diff-header {
+    color: var(--highlight);
+    font-weight: 600;
+}
+
+.git-file-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.45rem 0.65rem;
+    background-color: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    gap: 0.5rem;
+}

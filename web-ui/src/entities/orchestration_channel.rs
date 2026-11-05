@@ -11,6 +11,10 @@ pub struct Model {
     pub description: Option<String>,
     /// JSON array of CLI instance UUIDs participating in this channel
     pub participant_ids_json: String,
+    /// Configurable retention in days (0 = unlimited)
+    pub retention_days: i32,
+    /// Configurable maximum number of messages retained in DB for this channel (0 = unlimited)
+    pub max_messages: i32,
     pub created_at: DateTimeUtc,
 }
 

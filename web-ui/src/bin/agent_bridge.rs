@@ -15,7 +15,7 @@ use regex::Regex;
 use serde_json::{json, Value};
 use std::{env, net::SocketAddr, path::Path as FsPath, process::Stdio, sync::Arc, time::Duration};
 use tokio::{io::AsyncWriteExt, process::Command, time::sleep};
-use tracing::info;
+use tracing::{error, info};
 
 #[derive(Clone)]
 struct BridgeState {
@@ -57,10 +57,16 @@ async fn main() {
     let cli_web_url = env::var("CLI_WEB_URL")
         .unwrap_or_else(|_| format!("http://127.0.0.1:{}", default_web_port));
 
-    let http_client = reqwest::Client::builder()
+    let http_client = match reqwest::Client::builder()
         .timeout(Duration::from_secs(60))
         .build()
-        .expect("Failed to create HTTP client");
+    {
+        Ok(client) => client,
+        Err(e) => {
+            error!("Failed to create HTTP client: {}", e);
+            return;
+        }
+    };
 
     let state = Arc::new(BridgeState {
         agent_name: agent_name.clone(),
@@ -83,12 +89,16 @@ async fn main() {
         agent_name, addr
     );
 
-    let listener = tokio::net::TcpListener::bind(addr)
-        .await
-        .expect("Failed to bind agent-bridge");
-    axum::serve(listener, app)
-        .await
-        .expect("agent-bridge terminated");
+    let listener = match tokio::net::TcpListener::bind(addr).await {
+        Ok(l) => l,
+        Err(e) => {
+            error!("Failed to bind agent-bridge on {}: {}", addr, e);
+            return;
+        }
+    };
+    if let Err(e) = axum::serve(listener, app).await {
+        error!("agent-bridge server error: {}", e);
+    }
 }
 
 async fn handle_health(State(state): State<Arc<BridgeState>>) -> impl IntoResponse {
@@ -100,12 +110,19 @@ async fn handle_health(State(state): State<Arc<BridgeState>>) -> impl IntoRespon
 }
 
 async fn capture_tmux(session: &str, lines: u32) -> String {
-    let out = Command::new("tmux")
-        .args(["capture-pane", "-pt", session, "-S", &format!("-{}", lines)])
-        .output()
-        .await;
+    capture_tmux_ext(session, lines, false).await
+}
+
+async fn capture_tmux_ext(session: &str, lines: u32, ansi: bool) -> String {
+    let mut args = vec!["capture-pane"];
+    if ansi {
+        args.push("-e");
+    }
+    let start_line = format!("-{}", lines);
+    args.extend(["-pt", session, "-S", &start_line]);
+    let out = Command::new("tmux").args(&args).output().await;
     match out {
-        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).trim().to_string(),
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).trim_end().to_string(),
         Ok(o) => String::from_utf8_lossy(&o.stderr).trim().to_string(),
         Err(e) => format!("tmux error: {}", e),
     }
@@ -124,18 +141,38 @@ async fn send_tmux(session: &str, text: &str) -> String {
     capture_tmux(session, 120).await
 }
 
+async fn send_tmux_raw(session: &str, key_or_text: &str, special_key: bool) -> String {
+    if special_key {
+        let _ = Command::new("tmux")
+            .args(["send-keys", "-t", session, key_or_text])
+            .status()
+            .await;
+    } else {
+        let _ = Command::new("tmux")
+            .args(["send-keys", "-t", session, "-l", key_or_text])
+            .status()
+            .await;
+    }
+    sleep(Duration::from_millis(80)).await;
+    capture_tmux_ext(session, 120, true).await
+}
+
 fn extract_urls_and_code(text: &str) -> (String, String) {
-    let url_re = Regex::new(r"(https?://[^\s]+)").unwrap();
-    let code_re = Regex::new(r"\b([A-Z0-9]{4,5}-[A-Z0-9]{4,6})\b").unwrap();
-    let url = url_re
-        .captures(text)
-        .and_then(|c| c.get(1))
-        .map(|m| m.as_str().to_string())
+    let url = Regex::new(r"(https?://[^\s]+)")
+        .ok()
+        .and_then(|re| {
+            re.captures(text)
+                .and_then(|c| c.get(1))
+                .map(|m| m.as_str().to_string())
+        })
         .unwrap_or_default();
-    let code = code_re
-        .captures(text)
-        .and_then(|c| c.get(1))
-        .map(|m| m.as_str().to_string())
+    let code = Regex::new(r"\b([A-Z0-9]{4,5}-[A-Z0-9]{4,6})\b")
+        .ok()
+        .and_then(|re| {
+            re.captures(text)
+                .and_then(|c| c.get(1))
+                .map(|m| m.as_str().to_string())
+        })
         .unwrap_or_default();
     (url, code)
 }
@@ -282,13 +319,21 @@ async fn handle_rpc(
         "tmux/capture" => {
             let lines = params["lines"].as_u64().unwrap_or(120) as u32;
             let session = params["session"].as_str().unwrap_or("the_new_user");
-            let out = capture_tmux(session, lines).await;
+            let ansi = params["ansi"].as_bool().unwrap_or(false);
+            let out = capture_tmux_ext(session, lines, ansi).await;
             json!({ "output": out })
         }
         "tmux/send_keys" => {
             let text = params["text"].as_str().unwrap_or("");
             let session = params["session"].as_str().unwrap_or("the_new_user");
             let out = send_tmux(session, text).await;
+            json!({ "output": out })
+        }
+        "tmux/send_raw" => {
+            let data = params["data"].as_str().unwrap_or("");
+            let special = params["special"].as_bool().unwrap_or(false);
+            let session = params["session"].as_str().unwrap_or("the_new_user");
+            let out = send_tmux_raw(session, data, special).await;
             json!({ "output": out })
         }
         "prompt/send" | "session/prompt" | "turn/start" => {
