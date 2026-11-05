@@ -9,7 +9,7 @@ RUN set -x \
     && su - thenewuser -c "curl -fsSL https://antigravity.google/cli/install.sh | bash" \
     && (cp -Lf /home/thenewuser/.local/bin/agy /usr/local/bin/agy 2>/dev/null || cp -Lf /home/thenewuser/.gemini/bin/agy /usr/local/bin/agy 2>/dev/null || true) \
     && chmod 0755 /usr/local/bin/agy 2>/dev/null || true \
-    && rm -rf /var/cache/* /var/lib/apt/lists/* /var/log/* /var/tmp/* /tmp/*
+    && rm -rf /var/lib/apt/lists/* /var/log/* /var/tmp/* /tmp/*
 
 COPY --chown=thenewuser:thenewuser run-antigravity.sh /usr/local/bin/start-cli.sh
 RUN chmod 0755 /usr/local/bin/start-cli.sh
