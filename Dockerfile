@@ -5,7 +5,7 @@ LABEL maintainer="studyfranco@gmail.com"
 USER root
 
 RUN set -x \
-    && apt update \
+    && mkdir -p /var/cache/apt/archives/partial /var/lib/apt/lists/partial && apt update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y \
         rustc cargo rustfmt clippy rust-analyzer \
         clang lld lldb gdb cmake libssl-dev \
@@ -14,7 +14,7 @@ RUN set -x \
     && python3 -m pip install --break-system-packages uv ruff black mypy pytest ipython \
     && apt autopurge -yy \
     && apt clean autoclean -y \
-    && rm -rf /var/cache/* /var/lib/apt/lists/* /var/log/* /var/tmp/* /tmp/* /root/.cache
+    && rm -rf /var/lib/apt/lists/* /var/log/* /var/tmp/* /tmp/* /root/.cache
 
 USER thenewuser
 WORKDIR /tmp
