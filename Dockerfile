@@ -3,27 +3,29 @@ FROM rust:slim AS builder
 
 WORKDIR /app
 
-COPY Cargo.toml Cargo.lock ./
-COPY src src
-COPY static static
+COPY web-ui/Cargo.toml web-ui/Cargo.lock ./
+COPY web-ui/src src
+COPY web-ui/static static
 
 RUN set -x \
+    && mkdir -p /var/cache/apt/archives/partial /var/lib/apt/lists/partial \
     && apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         build-essential \
         ca-certificates \
         pkg-config \
-    && cargo build --release \
-    && apt-get clean autoclean -y \
-    && rm -rf /var/cache/* /var/lib/apt/lists/* /var/log/* /var/tmp/* /tmp/*
+    && cargo build --release --bins \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /var/log/* /var/tmp/* /tmp/*
 
 # Runtime stage (inherits rootless base image)
 FROM ghcr.io/studyfranco/new_local_user:master
 
 USER root
 COPY --from=builder /app/target/release/agent-hub /usr/local/bin/agent-hub
+COPY --from=builder /app/target/release/agent-bridge /usr/local/bin/agent-bridge
 COPY run-web.sh /usr/local/bin/start-cli.sh
-RUN chmod +x /usr/local/bin/agent-hub /usr/local/bin/start-cli.sh
+RUN chmod +x /usr/local/bin/agent-hub /usr/local/bin/agent-bridge /usr/local/bin/start-cli.sh
 
 USER thenewuser
 WORKDIR /srv

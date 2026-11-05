@@ -1,0 +1,46 @@
+[package]
+name = "agent-hub"
+version = "0.2.0"
+edition = "2024"
+default-run = "agent-hub"
+description = "Simply Agent Hub — Unified Rust Web UI, SeaORM Database, Native CLI Web Proxy & Rust Agent Bridge"
+
+[[bin]]
+name = "agent-hub"
+path = "src/main.rs"
+
+[[bin]]
+name = "agent-bridge"
+path = "src/bin/agent_bridge.rs"
+
+[dependencies]
+axum = { version = "0.8", features = ["ws", "macros"] }
+tokio = { version = "1", features = ["full"] }
+# SQL-agnostic persistence layer: SQLite by default, switchable to PostgreSQL or MariaDB/MySQL via DATABASE_URL
+sea-orm = { version = "2", features = ["sqlx-postgres", "sqlx-mysql", "sqlx-sqlite", "runtime-tokio-rustls", "macros", "with-uuid", "with-chrono"] }
+sea-orm-migration = { version = "2", features = ["runtime-tokio-rustls", "sqlx-postgres", "sqlx-mysql", "sqlx-sqlite"] }
+tokio-tungstenite = { version = "0.28", features = ["rustls-tls-webpki-roots"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "stream", "rustls"] }
+futures-util = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+http = "1"
+bytes = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+thiserror = "2"
+dotenvy = "0.15"
+url = "2"
+async-trait = "0.1"
+regex = "1"
+
+[target.'cfg(all(target_os = "linux", not(target_env = "msvc")))'.dependencies]
+tikv-jemallocator = "0.7"
+
+[dev-dependencies]
+tempfile = "3"
+oxc_allocator = "=0.152.0"
+oxc_parser = "=0.152.0"
+oxc_span = "=0.152.0"

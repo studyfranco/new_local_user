@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Simply Agent Hub — Gestionnaire multi-instances CLI, authentification Web et bus d'orchestration SeaORM.">
+    <title>Simply Agent Hub</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+
+<body>
+    <div id="dashboard-container" class="container">
+        <div id="top-bar" class="top-bar">
+            <header class="header">
+                <div class="logo">
+                    <div class="logo-icon"></div>
+                    <h1>Simply Agent Hub</h1>
+                </div>
+                <div class="header-actions">
+                    <span id="header-instances-count" class="badge badge-tier">0 CLIs enregistrés</span>
+                    <span id="header-active-cli-badge" class="badge badge-online">Aucun CLI sélectionné</span>
+                    <button id="btn-refresh-all" class="btn btn-secondary btn-sm">↻ Actualiser l'état</button>
+                </div>
+            </header>
+
+            <!-- Tab Navigation -->
+            <nav class="tab-nav" role="tablist">
+                <button class="tab-btn active" data-tab="console" role="tab" aria-selected="true">Console CLI &amp; Authentification</button>
+                <button class="tab-btn" data-tab="orchestration" role="tab" aria-selected="false">Canaux d'Orchestration Multi-CLIs</button>
+                <button class="tab-btn" data-tab="inventory" role="tab" aria-selected="false">Parc de Conteneurs (Base SeaORM)</button>
+                <button class="tab-btn" data-tab="rpc" role="tab" aria-selected="false">Inspecteur JSON-RPC</button>
+            </nav>
+        </div>
+
+        <!-- ═════════════════════════════════════════════════════════════════ -->
+        <!-- TAB 1: CONSOLE CLI UNIFIÉE, SÉLECTEUR DÉROULANT & AUTH WEB       -->
+        <!-- ═════════════════════════════════════════════════════════════════ -->
+        <main id="tab-console" class="tab-panel active">
+            <div class="workspace-grid">
+                <!-- Left Sidebar: Dropdown CLI Selector, Rename, Add, Web Auth -->
+                <aside class="card">
+                    <h2>Sélection du Conteneur CLI</h2>
+                    <p class="subtitle">Choisissez, renommez ou authentifiez n'importe laquelle de vos instances (Codex, Antigravity, Claude, Goose).</p>
+
+                    <div class="form-group">
+                        <label for="cli-selector">Instance CLI active</label>
+                        <select id="cli-selector" class="input-field"></select>
+                    </div>
+
+                    <div class="btn-row" style="margin-bottom: 1rem;">
+                        <button id="btn-open-add-cli" class="btn btn-primary btn-sm">+ Ajouter un CLI</button>
+                        <button id="btn-open-rename-cli" class="btn btn-secondary btn-sm">✎ Renommer / Éditer</button>
+                        <button id="btn-open-auth-cli" class="btn btn-secondary btn-sm">🔑 Authentifier</button>
+                        <button id="btn-delete-cli" class="btn btn-danger btn-sm">🗑</button>
+                    </div>
+
+                    <!-- Collapsible Add / Edit CLI Form (Saved in SeaORM DB) -->
+                    <div id="cli-form-box" class="subcard hidden">
+                        <h3 id="cli-form-title">Ajouter un conteneur CLI</h3>
+                        <input type="hidden" id="cli-form-id">
+                        <div class="form-group">
+                            <label for="cli-form-name">Nom personnalisé</label>
+                            <input id="cli-form-name" type="text" class="input-field" placeholder="ex: Codex #2 - Media Vidéo">
+                        </div>
+                        <div class="form-group">
+                            <label for="cli-form-kind">Type d'agent CLI</label>
+                            <select id="cli-form-kind" class="input-field">
+                                <option value="codex">Codex CLI (app-server)</option>
+                                <option value="antigravity">Antigravity CLI (agy)</option>
+                                <option value="claude">Claude Code CLI</option>
+                                <option value="goose">Goose CLI (ACP serve)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="cli-form-transport">Transport</label>
+                            <select id="cli-form-transport" class="input-field">
+                                <option value="ws">WebSocket (ws://...)</option>
+                                <option value="unix">Socket Unix (/run/...)</option>
+                                <option value="rpc">Pont HTTP JSON-RPC (http://.../rpc)</option>
+                                <option value="http">HTTP ACP (http://.../acp)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="cli-form-endpoint">URL / Socket Endpoint</label>
+                            <input id="cli-form-endpoint" type="text" class="input-field mono" placeholder="ws://codex-2:4500 ou http://antigravity-2:3286/rpc">
+                        </div>
+                        <div class="form-group">
+                            <label for="cli-form-bridge">URL du Pont d'Auth/Tmux (optionnel)</label>
+                            <input id="cli-form-bridge" type="text" class="input-field mono" placeholder="http://codex-2:3287/rpc">
+                        </div>
+                        <div class="form-group">
+                            <label for="cli-form-secret">Secret / Token (optionnel)</label>
+                            <input id="cli-form-secret" type="password" class="input-field mono" placeholder="GOOSE_SERVER__SECRET_KEY / Secret">
+                        </div>
+                        <div class="form-group">
+                            <label for="cli-form-cwd">Répertoire de travail (cwd)</label>
+                            <input id="cli-form-cwd" type="text" class="input-field mono" value="/srv">
+                        </div>
+                        <div class="btn-row">
+                            <button id="btn-save-cli" class="btn btn-primary btn-sm">Enregistrer en base</button>
+                            <button id="btn-cancel-cli" class="btn btn-cancel btn-sm">Annuler</button>
+                        </div>
+                    </div>
+
+                    <!-- Collapsible Web Authentication Panel -->
+                    <div id="cli-auth-box" class="subcard hidden">
+                        <h3>Authentification Web du Conteneur</h3>
+                        <p class="field-hint" style="margin-bottom:0.6rem;">Authentifiez le conteneur sélectionné sans quitter cette interface.</p>
+                        <div class="btn-row" style="margin-bottom:0.75rem;">
+                            <button id="btn-auth-status" class="btn btn-secondary btn-sm">Vérifier statut</button>
+                            <button id="btn-auth-device" class="btn btn-primary btn-sm">Obtenir Code Device / Lien OAuth</button>
+                        </div>
+                        <div id="auth-result-box" class="auth-result-box hidden"></div>
+
+                        <div class="form-group" style="margin-top:0.75rem;">
+                            <label for="auth-apikey-input">Ou injecter une clé API (OpenAI / Gemini / Anthropic)</label>
+                            <div class="btn-row">
+                                <input id="auth-apikey-input" type="password" class="input-field mono" placeholder="sk-... / AIza...">
+                                <button id="btn-auth-apikey" class="btn btn-secondary btn-sm">Appliquer la clé</button>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="auth-callback-input">Ou valider une URL Callback OAuth (http://localhost:...)</label>
+                            <div class="btn-row">
+                                <input id="auth-callback-input" type="text" class="input-field mono" placeholder="http://localhost:.../oauth-callback?code=...">
+                                <button id="btn-auth-callback" class="btn btn-secondary btn-sm">Valider OAuth</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <hr style="border:none;border-top:1px solid var(--border);margin:1rem 0;">
+
+                    <!-- Connection & Session Controls for Selected Instance -->
+                    <div class="btn-row">
+                        <button id="btn-cli-connect" class="btn btn-primary">Connecter au CLI</button>
+                        <button id="btn-cli-new-session" class="btn btn-secondary">+ Session / Thread</button>
+                        <button id="btn-cli-tmux" class="btn btn-secondary btn-sm">🖥 Écran Tmux</button>
+                        <button id="btn-cli-native-web" class="btn btn-secondary btn-sm" title="Ouvrir ou intégrer le serveur Web natif lancé par le CLI (ex: Antigravity :4400)">🌐 Serveur Web du CLI</button>
+                    </div>
+
+                    <h2 style="margin-top:1rem;">Sessions / Threads</h2>
+                    <div id="cli-sessions-list" class="session-list">
+                        <div class="field-hint">Sélectionnez et connectez un CLI</div>
+                    </div>
+                </aside>
+
+                <!-- Right Main Chat & Terminal Area -->
+                <section class="card chat-card">
+                    <div class="chat-header">
+                        <div>
+                            <span id="console-conn-badge" class="badge">Prêt</span>
+                            <span id="console-instance-badge" class="badge badge-tier">-</span>
+                            <span id="console-session-badge" class="badge">-</span>
+                        </div>
+                        <div class="btn-row" style="margin-top:0;">
+                            <button id="btn-console-interrupt" class="btn btn-danger btn-sm hidden">⏹ Interrompre</button>
+                            <button id="btn-console-clear" class="btn btn-secondary btn-sm">Effacer</button>
+                        </div>
+                    </div>
+
+                    <div id="console-messages" class="messages-stream"></div>
+
+                    <div id="console-approval-banner" class="approval-banner hidden">
+                        <div>
+                            <strong>Autorisation d'outil requise par le CLI</strong>
+                            <pre id="console-approval-details"></pre>
+                        </div>
+                        <div class="btn-row">
+                            <button id="btn-console-approve" class="btn btn-primary btn-sm">Autoriser</button>
+                            <button id="btn-console-decline" class="btn btn-danger btn-sm">Refuser</button>
+                        </div>
+                    </div>
+
+                    <form id="console-prompt-form" class="composer-bar">
+                        <textarea id="console-prompt-input" class="input-field" placeholder="Écrivez votre instruction pour le CLI sélectionné..."></textarea>
+                        <button type="submit" class="btn btn-primary">Envoyer ➤</button>
+                    </form>
+                </section>
+            </div>
+        </main>
+
+        <!-- ═════════════════════════════════════════════════════════════════ -->
+        <!-- TAB 2: CANAUX D'ORCHESTRATION MULTI-CLIS (/api/orchestration/...) -->
+        <!-- ═════════════════════════════════════════════════════════════════ -->
+        <main id="tab-orchestration" class="tab-panel">
+            <div class="workspace-grid">
+                <aside class="card">
+                    <h2>Canaux d'Orchestration</h2>
+                    <p class="subtitle">Créez un canal partagé où plusieurs instances CLI (ex: 2 Codex + 1 Antigravity + 1 Goose) échangent des messages en temps réel.</p>
+
+                    <div class="form-group">
+                        <label for="channel-selector">Canal actif</label>
+                        <select id="channel-selector" class="input-field"></select>
+                    </div>
+
+                    <div class="btn-row" style="margin-bottom:1rem;">
+                        <button id="btn-open-new-channel" class="btn btn-primary btn-sm">+ Nouveau Canal</button>
+                        <button id="btn-delete-channel" class="btn btn-danger btn-sm">🗑 Supprimer</button>
+                    </div>
+
+                    <div id="new-channel-box" class="subcard hidden">
+                        <h3>Créer un canal</h3>
+                        <div class="form-group">
+                            <label for="new-channel-name">Nom du canal</label>
+                            <input id="new-channel-name" type="text" class="input-field" placeholder="ex: refactoring-audio">
+                        </div>
+                        <div class="form-group">
+                            <label for="new-channel-desc">Description</label>
+                            <input id="new-channel-desc" type="text" class="input-field" placeholder="Mission commune...">
+                        </div>
+                        <div class="btn-row">
+                            <button id="btn-create-channel" class="btn btn-primary btn-sm">Créer</button>
+                            <button id="btn-cancel-channel" class="btn btn-cancel btn-sm">Annuler</button>
+                        </div>
+                    </div>
+
+                    <hr style="border:none;border-top:1px solid var(--border);margin:1rem 0;">
+                    <h2>CLIs connectés à ce canal</h2>
+                    <p class="field-hint">Cochez les instances qui participent aux échanges de ce canal :</p>
+                    <div id="channel-participants-list" class="session-list" style="max-height:220px;"></div>
+                    <button id="btn-save-participants" class="btn btn-secondary btn-sm" style="margin-top:0.65rem;width:100%;">💾 Enregistrer les participants du canal</button>
+                </aside>
+
+                <section class="card chat-card">
+                    <div class="chat-header">
+                        <div>
+                            <span id="channel-ws-badge" class="badge badge-online">Bus WebSocket Actif</span>
+                            <span id="channel-title-badge" class="badge badge-tier">#general</span>
+                        </div>
+                        <div class="btn-row" style="margin-top:0;">
+                            <button id="btn-refresh-channel-msgs" class="btn btn-secondary btn-sm">↻ Historique DB</button>
+                        </div>
+                    </div>
+
+                    <div id="channel-messages" class="messages-stream"></div>
+
+                    <form id="channel-publish-form" class="composer-bar">
+                        <select id="channel-recipient-select" class="input-field" style="max-width:210px;">
+                            <option value="@all">@all (Tous les participants)</option>
+                        </select>
+                        <textarea id="channel-message-input" class="input-field" placeholder="Message sur le canal d'orchestration (les agents participants répondront sur ce même canal)..."></textarea>
+                        <button type="submit" class="btn btn-primary">Diffuser ➤</button>
+                    </form>
+                </section>
+            </div>
+        </main>
+
+        <!-- ═════════════════════════════════════════════════════════════════ -->
+        <!-- TAB 3: PARC DE CONTENEURS (INVENTAIRE SEAORM DB)                  -->
+        <!-- ═════════════════════════════════════════════════════════════════ -->
+        <main id="tab-inventory" class="tab-panel">
+            <section class="card">
+                <div class="chat-header">
+                    <div>
+                        <h2>Parc de Conteneurs CLI enregistrés (SeaORM : SQLite / Postgres / MariaDB)</h2>
+                        <p class="subtitle" style="margin-bottom:0;">Gérez l'ensemble de vos instances Codex, Antigravity, Claude et Goose persistées en base de données.</p>
+                    </div>
+                    <button id="btn-inventory-add" class="btn btn-primary btn-sm">+ Nouveau Conteneur CLI</button>
+                </div>
+
+                <div class="table-wrapper">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Nom de l'instance</th>
+                                <th>Type</th>
+                                <th>Transport</th>
+                                <th>Endpoint</th>
+                                <th>Pont Auth/Tmux</th>
+                                <th>CWD</th>
+                                <th>État</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="inventory-tbody"></tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+
+        <!-- ═════════════════════════════════════════════════════════════════ -->
+        <!-- TAB 4: INSPECTEUR JSON-RPC 2.0                                    -->
+        <!-- ═════════════════════════════════════════════════════════════════ -->
+        <main id="tab-rpc" class="tab-panel">
+            <section class="card chat-card">
+                <div class="chat-header">
+                    <div>
+                        <h2>Inspecteur de trames JSON-RPC 2.0 &amp; Bus d'Orchestration</h2>
+                        <p class="subtitle" style="margin-bottom:0;">Journal temps réel des échanges avec les conteneurs CLI.</p>
+                    </div>
+                    <button id="btn-clear-rpc" class="btn btn-secondary btn-sm">Vider le journal</button>
+                </div>
+
+                <div id="rpc-log" class="messages-stream" style="font-family:var(--font-mono);font-size:0.8rem;"></div>
+            </section>
+        </main>
+    </div>
+
+    <script src="/app.js"></script>
+</body>
+
+</html>
