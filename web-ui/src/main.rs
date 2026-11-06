@@ -153,6 +153,12 @@ struct UpdateInstanceRequest {
 struct OnboardInstanceRequest {
     channel_name: Option<String>,
     custom_prompt: Option<String>,
+    lang: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct RolePresetsQuery {
+    lang: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -394,7 +400,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         )
         .route(
             "/api/orchestration/channels/{id}/messages",
-            get(list_channel_messages),
+            get(list_channel_messages).post(publish_channel_message),
         )
         .route(
             "/api/orchestration/channels/{id}/publish",
@@ -597,7 +603,7 @@ async fn get_instance(
         }
         Ok(None) => (
             StatusCode::NOT_FOUND,
-            Json(json!({ "error": "Instance introuvable" })),
+            Json(json!({ "error": "Instance not found" })),
         ),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -685,7 +691,7 @@ async fn update_instance(
         Ok(None) => {
             return (
                 StatusCode::NOT_FOUND,
-                Json(json!({ "error": "Instance introuvable" })),
+                Json(json!({ "error": "Instance not found" })),
             )
         }
         Err(e) => {
@@ -730,12 +736,19 @@ async fn update_instance(
         let r = role.trim().to_lowercase();
         if !r.is_empty() {
             active.role = Set(r.clone());
-            if req.role_prompt.is_none() {
+            if req
+                .role_prompt
+                .as_deref()
+                .map(|s| s.trim().is_empty())
+                .unwrap_or(true)
+            {
                 active.role_prompt = Set(db::default_role_prompt(&r).to_string());
             }
         }
     }
-    if let Some(role_prompt) = req.role_prompt {
+    if let Some(role_prompt) = req.role_prompt
+        && !role_prompt.trim().is_empty()
+    {
         active.role_prompt = Set(role_prompt.trim().to_string());
     }
     active.updated_at = Set(Utc::now());
@@ -759,7 +772,7 @@ async fn delete_instance(
         }
         Ok(_) => (
             StatusCode::NOT_FOUND,
-            Json(json!({ "error": "Instance introuvable" })),
+            Json(json!({ "error": "Instance not found" })),
         ),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -778,7 +791,7 @@ async fn instance_auth_handler(
         Ok(None) => {
             return (
                 StatusCode::NOT_FOUND,
-                Json(json!({ "error": "Instance introuvable" })),
+                Json(json!({ "error": "Instance not found" })),
             )
         }
         Err(e) => {
@@ -808,7 +821,7 @@ async fn instance_auth_handler(
         other => {
             return (
                 StatusCode::BAD_REQUEST,
-                Json(json!({ "error": format!("Action auth inconnue: {}", other) })),
+                Json(json!({ "error": format!("Unknown auth action: {}", other) })),
             )
         }
     };
@@ -888,7 +901,7 @@ async fn instance_auth_handler(
                         "instance_id": id,
                         "name": inst.name,
                         "kind": inst.kind,
-                        "auth": { "authenticated": true, "detail": "Clé API transmise à codex app-server" }
+                        "auth": { "authenticated": true, "detail": "API key sent to codex app-server" }
                     })),
                 );
             } else {
@@ -898,7 +911,7 @@ async fn instance_auth_handler(
                         "instance_id": id,
                         "name": inst.name,
                         "kind": inst.kind,
-                        "auth": { "authenticated": true, "detail": "codex app-server joignable via WebSocket" }
+                        "auth": { "authenticated": true, "detail": "codex app-server reachable via WebSocket" }
                     })),
                 );
             }
@@ -912,7 +925,7 @@ async fn instance_auth_handler(
             "kind": inst.kind,
             "auth": {
                 "authenticated": false,
-                "detail": format!("Conteneur non joignable sur {}", rpc_url)
+                "detail": format!("Container unreachable at {}", rpc_url)
             }
         })),
     )
@@ -954,7 +967,7 @@ async fn proxy_instance_web_inner(
     else {
         return (
             StatusCode::NOT_FOUND,
-            Json(json!({ "error": "Instance introuvable" })),
+            Json(json!({ "error": "Instance not found" })),
         )
             .into_response();
     };
@@ -1017,7 +1030,7 @@ async fn proxy_instance_web_inner(
         }
         Err(e) => (
             StatusCode::BAD_GATEWAY,
-            Json(json!({ "error": format!("Serveur web natif du CLI injoignable ({}): {}", target, e) })),
+            Json(json!({ "error": format!("CLI native web server unreachable ({}): {}", target, e) })),
         )
             .into_response(),
     }
@@ -1051,7 +1064,7 @@ async fn get_channel(
         Ok(Some(ch)) => (StatusCode::OK, Json(json!(ch))),
         Ok(None) => (
             StatusCode::NOT_FOUND,
-            Json(json!({ "error": "Canal introuvable" })),
+            Json(json!({ "error": "Channel not found" })),
         ),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -1098,7 +1111,7 @@ async fn update_channel(
         Ok(None) => {
             return (
                 StatusCode::NOT_FOUND,
-                Json(json!({ "error": "Canal introuvable" })),
+                Json(json!({ "error": "Channel not found" })),
             )
         }
         Err(e) => {
@@ -1152,7 +1165,7 @@ async fn delete_channel(
         }
         Ok(_) => (
             StatusCode::NOT_FOUND,
-            Json(json!({ "error": "Canal introuvable" })),
+            Json(json!({ "error": "Channel not found" })),
         ),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -1220,7 +1233,7 @@ async fn publish_channel_message(
         Ok(None) => {
             return (
                 StatusCode::NOT_FOUND,
-                Json(json!({ "error": "Canal d'orchestration introuvable" })),
+                Json(json!({ "error": "Orchestration channel not found" })),
             )
         }
         Err(e) => {
@@ -1293,7 +1306,7 @@ async fn publish_channel_message(
         }
 
         let mut running_context = format!(
-            "[Canal d'orchestration '{}' — Message de {}] :\n{}\n",
+            "[Orchestration channel '{}' — Message from {}]:\n{}\n",
             channel.name, sender_name, req.content
         );
 
@@ -1307,7 +1320,7 @@ async fn publish_channel_message(
                 inst.role_prompt.clone()
             };
             let prompt_for_agent = format!(
-                "[Système — Identité & Rôle]\nAgent : {} (CLI: {}, Rôle: {})\nMission : {}\n\n---\n{}\n---\nRéponds sur le canal '{}' en respectant ton rôle '{}' (tu peux mentionner un autre agent avec @NomAgent si besoin) :",
+                "[System — Identity & Role]\nAgent: {} (CLI: {}, Role: {})\nMission: {}\n\n---\n{}\n---\nReply on channel '{}' adhering to your role '{}' (you can mention another agent with @AgentName if needed):",
                 inst.name, inst.kind, inst.role, role_instruction, running_context, channel.name, inst.role
             );
 
@@ -1322,7 +1335,7 @@ async fn publish_channel_message(
                 )
                 .await
             {
-                running_context.push_str(&format!("\n[Réponse de {}] :\n{}\n", inst.name, reply_text));
+                running_context.push_str(&format!("\n[Reply from {}]:\n{}\n", inst.name, reply_text));
                 replies.push(saved_reply);
             }
         }
@@ -1390,7 +1403,7 @@ async fn prune_channel_messages(
     else {
         return (
             StatusCode::NOT_FOUND,
-            Json(json!({ "error": "Canal introuvable" })),
+            Json(json!({ "error": "Channel not found" })),
         );
     };
 
@@ -1401,6 +1414,7 @@ async fn prune_channel_messages(
                 "channel_id": channel.id,
                 "retention_days": channel.retention_days,
                 "max_messages": channel.max_messages,
+                "pruned": pruned,
                 "pruned_messages": pruned
             })),
         ),
@@ -1424,7 +1438,7 @@ async fn export_channel_markdown(
         return (
             StatusCode::NOT_FOUND,
             [("content-type", "text/plain; charset=utf-8")],
-            "Canal introuvable".to_string(),
+            "Channel not found".to_string(),
         );
     };
 
@@ -1436,12 +1450,12 @@ async fn export_channel_markdown(
         .unwrap_or_default();
 
     let mut md = format!(
-        "# Canal d'orchestration : #{}\n\n\
-        - **Description** : {}\n\
-        - **Politique de rétention** : {} jours / max {} messages\n\
-        - **Messages exportés** : {}\n\n---\n\n",
+        "# Orchestration Channel: #{}\n\n\
+        - **Description**: {}\n\
+        - **Retention Policy**: {} days / max {} messages\n\
+        - **Exported Messages**: {}\n\n---\n\n",
         channel.name,
-        channel.description.as_deref().unwrap_or("Aucune"),
+        channel.description.as_deref().unwrap_or("None"),
         channel.retention_days,
         channel.max_messages,
         msgs.len()
@@ -1577,7 +1591,7 @@ async fn ask_instance_model(
             )
             .await
         }
-        other => Err(format!("Type d'agent non supporté: {}", other)),
+        other => Err(format!("Unsupported agent kind: {}", other)),
     }
 }
 
@@ -1610,7 +1624,7 @@ async fn handle_agent_ask(
     } else {
         (
             StatusCode::NOT_FOUND,
-            Json(json!({ "error": "Aucune instance CLI correspondante trouvée" })),
+            Json(json!({ "error": "No matching CLI instance found" })),
         )
     }
 }
@@ -1622,7 +1636,7 @@ async fn handle_agent_tmux(
     let Some(inst) = resolve_instance(&state, req.instance_id, req.agent.as_deref()).await else {
         return (
             StatusCode::NOT_FOUND,
-            Json(json!({ "error": "Instance introuvable" })),
+            Json(json!({ "error": "Instance not found" })),
         );
     };
 
@@ -1691,11 +1705,11 @@ async fn ask_http_rpc_peer(
     let resp = req
         .send()
         .await
-        .map_err(|e| format!("Impossible de joindre {} ({}): {}", agent_name, url, e))?;
+        .map_err(|e| format!("Unable to reach {} ({}): {}", agent_name, url, e))?;
     let val: Value = resp
         .json()
         .await
-        .map_err(|e| format!("Réponse JSON invalide de {}: {}", agent_name, e))?;
+        .map_err(|e| format!("Invalid JSON response from {}: {}", agent_name, e))?;
     if let Some(err) = val.get("error") {
         return Err(err.to_string());
     }
@@ -1708,7 +1722,7 @@ async fn ask_http_rpc_peer(
 async fn ask_codex_oneshot(ws_url: &str, prompt: &str, cwd: &str) -> Result<String, String> {
     let (mut ws, _) = connect_async(ws_url)
         .await
-        .map_err(|e| format!("Connexion Codex WS échouée ({}): {}", ws_url, e))?;
+        .map_err(|e| format!("Codex WS connection failed ({}): {}", ws_url, e))?;
 
     ws.send(TungMessage::Text(
         json!({
@@ -1813,7 +1827,7 @@ async fn ask_goose_oneshot(
 
     let (mut ws, _) = connect_async(req)
         .await
-        .map_err(|e| format!("Connexion Goose ACP échouée ({}): {}", ws_url, e))?;
+        .map_err(|e| format!("Goose ACP connection failed ({}): {}", ws_url, e))?;
 
     ws.send(TungMessage::Text(
         json!({
@@ -1943,7 +1957,7 @@ async fn handle_codex_ws(
                 warn!("Codex Unix socket connection failed ({}): {}", sock_path, e);
                 let _ = send_bridge_error(
                     &mut client_ws,
-                    &format!("Impossible de joindre le socket Unix Codex ({}): {}", sock_path, e),
+                    &format!("Unable to reach Codex Unix socket ({}): {}", sock_path, e),
                 )
                 .await;
             }
@@ -1958,7 +1972,7 @@ async fn handle_codex_ws(
                 warn!("Codex WebSocket connection failed ({}): {}", target, e);
                 let _ = send_bridge_error(
                     &mut client_ws,
-                    &format!("Impossible de joindre Codex WebSocket ({}): {}", target, e),
+                    &format!("Unable to reach Codex WebSocket ({}): {}", target, e),
                 )
                 .await;
             }
@@ -2008,7 +2022,7 @@ async fn handle_goose_ws(
         Err(e) => {
             let _ = send_bridge_error(
                 &mut client_ws,
-                &format!("URL Goose invalide ({}): {}", target_url, e),
+                &format!("Invalid Goose URL ({}): {}", target_url, e),
             )
             .await;
             return;
@@ -2033,7 +2047,7 @@ async fn handle_goose_ws(
             warn!("Goose WebSocket connection failed ({}): {}", target_url, e);
             let _ = send_bridge_error(
                 &mut client_ws,
-                &format!("Impossible de joindre Goose ACP ({}): {}", target_url, e),
+                &format!("Unable to reach Goose ACP ({}): {}", target_url, e),
             )
             .await;
         }
@@ -2219,37 +2233,41 @@ async fn bridge_ws_to_unix(client_ws: WebSocket, unix_stream: UnixStream) {
 // ============================================================================
 // ROLES PRESETS & AGENT ONBOARDING (/api/roles/presets, /api/instances/{id}/onboard)
 // ============================================================================
-async fn list_role_presets() -> impl IntoResponse {
+async fn list_role_presets(
+    Query(query): Query<RolePresetsQuery>,
+) -> impl IntoResponse {
+    let lang = query.lang.as_deref().unwrap_or("en");
+    let is_fr = lang == "fr";
     let presets = json!([
         {
             "id": "architect",
-            "label": "🏗️ Architecte Logiciel",
-            "prompt": db::default_role_prompt("architect")
+            "label": if is_fr { "🏗️ Architecte Logiciel" } else { "🏗️ Software Architect" },
+            "prompt": db::default_role_prompt_lang("architect", lang)
         },
         {
             "id": "developer",
-            "label": "💻 Développeur Principal",
-            "prompt": db::default_role_prompt("developer")
+            "label": if is_fr { "💻 Développeur Principal" } else { "💻 Lead Developer" },
+            "prompt": db::default_role_prompt_lang("developer", lang)
         },
         {
             "id": "reviewer",
-            "label": "🔍 Code Reviewer & Qualité",
-            "prompt": db::default_role_prompt("reviewer")
+            "label": if is_fr { "🔍 Code Reviewer & Qualité" } else { "🔍 Code Reviewer & QA" },
+            "prompt": db::default_role_prompt_lang("reviewer", lang)
         },
         {
             "id": "tester",
-            "label": "🧪 Ingénieur QA & Tests E2E",
-            "prompt": db::default_role_prompt("tester")
+            "label": if is_fr { "🧪 Ingénieur QA & Tests E2E" } else { "🧪 QA & E2E Test Engineer" },
+            "prompt": db::default_role_prompt_lang("tester", lang)
         },
         {
             "id": "security",
-            "label": "🛡️ Auditeur Sécurité & DevSecOps",
-            "prompt": db::default_role_prompt("security")
+            "label": if is_fr { "🛡️ Auditeur Sécurité & DevSecOps" } else { "🛡️ Security & DevSecOps Auditor" },
+            "prompt": db::default_role_prompt_lang("security", lang)
         },
         {
             "id": "general",
-            "label": "🤖 Agent Polyvalent",
-            "prompt": db::default_role_prompt("general")
+            "label": if is_fr { "🤖 Agent Polyvalent" } else { "🤖 Versatile Agent" },
+            "prompt": db::default_role_prompt_lang("general", lang)
         }
     ]);
     (StatusCode::OK, Json(presets))
@@ -2268,33 +2286,48 @@ async fn onboard_instance_handler(
     else {
         return (
             StatusCode::NOT_FOUND,
-            Json(json!({ "error": "Instance introuvable" })),
+            Json(json!({ "error": "Instance not found" })),
         );
     };
 
     let channel_name = req.channel_name.unwrap_or_else(|| "general".to_string());
+    let lang = req.lang.as_deref().unwrap_or("en");
     let base_role_prompt = req
         .custom_prompt
         .filter(|s| !s.trim().is_empty())
         .unwrap_or_else(|| {
             if inst.role_prompt.trim().is_empty() {
-                db::default_role_prompt(&inst.role).to_string()
+                db::default_role_prompt_lang(&inst.role, lang).to_string()
             } else {
                 inst.role_prompt.clone()
             }
         });
 
-    let onboarding_prompt = format!(
-        "[INITIALISATION D'AGENT — SIMPLY AGENT HUB]\n\
-        1. Ton identité : Tu es l'instance '{}' (moteur CLI : '{}', dossier de travail : '{}').\n\
-        2. Ton rôle attribué : '{}'.\n\
-        3. Ta mission & tes consignes :\n{}\n\
-        4. Fonctionnement de l'orchestration :\n\
-        - Tu es connecté au canal d'orchestration '{}'.\n\
-        - Tu peux interpeller un autre agent du collectif avec @NomAgent.\n\
-        Confirme en une phrase concise que tu as bien pris connaissance de ton identité et de ton rôle '{}'.",
-        inst.name, inst.kind, inst.default_cwd, inst.role, base_role_prompt, channel_name, inst.role
-    );
+    let onboarding_prompt = if lang == "fr" {
+        format!(
+            "[INITIALISATION D'AGENT — SIMPLY AGENT HUB]\n\
+            1. Ton identité : Tu es l'instance '{}' (moteur CLI : '{}', dossier de travail : '{}').\n\
+            2. Ton rôle attribué : '{}'.\n\
+            3. Ta mission & tes consignes :\n{}\n\
+            4. Fonctionnement de l'orchestration :\n\
+            - Tu es connecté au canal d'orchestration '{}'.\n\
+            - Tu peux interpeller un autre agent du collectif avec @NomAgent.\n\
+            Confirme en une phrase concise que tu as bien pris connaissance de ton identité et de ton rôle '{}'.",
+            inst.name, inst.kind, inst.default_cwd, inst.role, base_role_prompt, channel_name, inst.role
+        )
+    } else {
+        format!(
+            "[AGENT ONBOARDING — SIMPLY AGENT HUB]\n\
+            1. Your identity: You are instance '{}' (CLI engine: '{}', working directory: '{}').\n\
+            2. Your assigned role: '{}'.\n\
+            3. Your mission & guidelines:\n{}\n\
+            4. Orchestration rules:\n\
+            - You are connected to orchestration channel '{}'.\n\
+            - You can mention any collective agent with @AgentName.\n\
+            Confirm in one concise sentence that you acknowledge your identity and role '{}'.",
+            inst.name, inst.kind, inst.default_cwd, inst.role, base_role_prompt, channel_name, inst.role
+        )
+    };
 
     match ask_instance_model(&state, &inst, &onboarding_prompt, None, "auto").await {
         Ok(reply) => (
@@ -2570,7 +2603,7 @@ async fn handle_git_commit(
     if req.message.trim().is_empty() {
         return (
             StatusCode::BAD_REQUEST,
-            Json(json!({ "error": "Le message de commit ne peut pas être vide" })),
+            Json(json!({ "error": "Commit message cannot be empty" })),
         );
     }
     let workdir = resolve_git_cwd(&state, req.cwd.as_deref());
@@ -2648,5 +2681,585 @@ async fn handle_git_revert(
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({ "error": e.to_string() })),
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn spawn_test_hub(default_cwd: &str) -> (String, Arc<AppState>) {
+        let db = db::connect_and_migrate(
+            "sqlite::memory:",
+            "ws://127.0.0.1:14500",
+            "ws://127.0.0.1:13284/acp",
+            None,
+            "http://127.0.0.1:13285/rpc",
+            "http://127.0.0.1:13286/rpc",
+            default_cwd,
+        )
+        .await
+        .unwrap_or_else(|e| panic!("db init failed: {e}"));
+
+        let http_client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .unwrap_or_else(|e| panic!("client init failed: {e}"));
+
+        let state = Arc::new(AppState {
+            db,
+            goose_http_url: "http://127.0.0.1:13284".to_string(),
+            goose_ws_url: "ws://127.0.0.1:13284/acp".to_string(),
+            goose_secret: None,
+            codex_ws_url: "ws://127.0.0.1:14500".to_string(),
+            codex_unix_socket: "/tmp/nonexistent-codex.sock".to_string(),
+            claude_rpc_url: "http://127.0.0.1:13285/rpc".to_string(),
+            antigravity_rpc_url: "http://127.0.0.1:13286/rpc".to_string(),
+            bridge_secret: None,
+            default_cwd: default_cwd.to_string(),
+            http_client,
+            channel_hubs: Arc::new(RwLock::new(HashMap::new())),
+        });
+
+        let app = build_router(state.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .unwrap_or_else(|e| panic!("bind failed: {e}"));
+        let addr = listener
+            .local_addr()
+            .unwrap_or_else(|e| panic!("local_addr failed: {e}"));
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+
+        (format!("http://{}", addr), state)
+    }
+
+    async fn spawn_mock_bridge() -> String {
+        let app = Router::new().route(
+            "/rpc",
+            post(|Json(req): Json<Value>| async move {
+                let rpc_id = req.get("id").cloned().unwrap_or(json!(1));
+                let method = req["method"].as_str().unwrap_or("");
+                let params = &req["params"];
+                let result = match method {
+                    "prompt/send" => {
+                        let p = params["prompt"].as_str().unwrap_or("");
+                        json!({
+                            "reply": format!("ACK_ROLE_PROMPT len={} head={}", p.len(), &p[..p.len().min(48)]),
+                            "agent": "claude"
+                        })
+                    }
+                    "tmux/capture" => {
+                        let ansi = params["ansi"].as_bool().unwrap_or(false);
+                        let out = if ansi {
+                            "\u{1b}[32mthenewuser@container\u{1b}[0m:~$ ready"
+                        } else {
+                            "thenewuser@container:~$ ready"
+                        };
+                        json!({ "output": out })
+                    }
+                    "tmux/send_raw" => {
+                        let data = params["data"].as_str().unwrap_or("");
+                        let special = params["special"].as_bool().unwrap_or(false);
+                        json!({
+                            "output": format!("\u{1b}[36mRAW_ACK\u{1b}[0m special={} data={}", special, data)
+                        })
+                    }
+                    "tmux/send_keys" => {
+                        let text = params["text"].as_str().unwrap_or("");
+                        json!({ "output": format!("LINE_ACK: {}", text) })
+                    }
+                    _ => json!({ "status": "ok" }),
+                };
+                Json(json!({ "jsonrpc": "2.0", "id": rpc_id, "result": result }))
+            }),
+        );
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .unwrap_or_else(|e| panic!("mock bridge bind failed: {e}"));
+        let addr = listener
+            .local_addr()
+            .unwrap_or_else(|e| panic!("mock bridge addr failed: {e}"));
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+
+        format!("http://{}/rpc", addr)
+    }
+
+    #[tokio::test]
+    async fn test_role_presets_and_instance_roles_crud() {
+        let (base_url, state) = spawn_test_hub("/tmp").await;
+        let client = &state.http_client;
+
+        // 1. Check /api/roles/presets
+        let presets_resp = client
+            .get(format!("{}/api/roles/presets", base_url))
+            .send()
+            .await
+            .unwrap_or_else(|e| panic!("presets request failed: {e}"));
+        assert_eq!(presets_resp.status(), StatusCode::OK);
+        let presets: Vec<Value> = presets_resp
+            .json()
+            .await
+            .unwrap_or_else(|e| panic!("presets json failed: {e}"));
+        assert_eq!(presets.len(), 6);
+        assert!(presets.iter().any(|p| p["id"] == "architect"));
+        assert!(presets.iter().any(|p| p["id"] == "security"));
+
+        // 2. Create an instance with role "security"
+        let create_resp = client
+            .post(format!("{}/api/instances", base_url))
+            .json(&json!({
+                "name": "SecBot",
+                "kind": "claude",
+                "transport": "http-rpc",
+                "endpoint_url": "http://127.0.0.1:13285/rpc",
+                "role": "security",
+                "role_prompt": "Vérifie strictement les accès rootless."
+            }))
+            .send()
+            .await
+            .unwrap_or_else(|e| panic!("create instance failed: {e}"));
+        assert_eq!(create_resp.status(), StatusCode::CREATED);
+        let created: Value = create_resp
+            .json()
+            .await
+            .unwrap_or_else(|e| panic!("created json failed: {e}"));
+        let inst_id = created["id"]
+            .as_str()
+            .unwrap_or_else(|| panic!("missing id"));
+        assert_eq!(created["role"], "security");
+        assert_eq!(
+            created["role_prompt"],
+            "Vérifie strictement les accès rootless."
+        );
+
+        // 3. Update role to "reviewer" with empty role_prompt (should fallback to default reviewer prompt)
+        let update_resp = client
+            .put(format!("{}/api/instances/{}", base_url, inst_id))
+            .json(&json!({
+                "role": "reviewer",
+                "role_prompt": ""
+            }))
+            .send()
+            .await
+            .unwrap_or_else(|e| panic!("update instance failed: {e}"));
+        assert_eq!(update_resp.status(), StatusCode::OK);
+        let updated: Value = update_resp
+            .json()
+            .await
+            .unwrap_or_else(|e| panic!("updated json failed: {e}"));
+        assert_eq!(updated["role"], "reviewer");
+        assert!(
+            updated["role_prompt"]
+                .as_str()
+                .unwrap_or("")
+                .contains("Code Reviewer")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_instance_onboarding_and_role_orchestration() {
+        let mock_rpc_url = spawn_mock_bridge().await;
+        let (base_url, state) = spawn_test_hub("/tmp").await;
+        let client = &state.http_client;
+
+        // Register a local instance backed by our mock bridge
+        let create_resp = client
+            .post(format!("{}/api/instances", base_url))
+            .json(&json!({
+                "name": "LocalArch",
+                "kind": "claude",
+                "transport": "http-rpc",
+                "endpoint_url": mock_rpc_url,
+                "bridge_url": mock_rpc_url,
+                "role": "architect"
+            }))
+            .send()
+            .await
+            .unwrap_or_else(|e| panic!("create failed: {e}"));
+        let created: Value = create_resp
+            .json()
+            .await
+            .unwrap_or_else(|e| panic!("json failed: {e}"));
+        let inst_id = created["id"].as_str().unwrap_or("");
+
+        // Onboard the instance
+        let onboard_resp = client
+            .post(format!("{}/api/instances/{}/onboard", base_url, inst_id))
+            .json(&json!({ "channel_name": "architecture-room" }))
+            .send()
+            .await
+            .unwrap_or_else(|e| panic!("onboard failed: {e}"));
+        assert_eq!(onboard_resp.status(), StatusCode::OK);
+        let onboard_val: Value = onboard_resp
+            .json()
+            .await
+            .unwrap_or_else(|e| panic!("onboard json failed: {e}"));
+        assert!(
+            onboard_val["onboarding_prompt"]
+                .as_str()
+                .unwrap_or("")
+                .contains("AGENT ONBOARDING")
+        );
+        assert!(
+            onboard_val["reply"]
+                .as_str()
+                .unwrap_or("")
+                .starts_with("ACK_ROLE_PROMPT")
+        );
+
+        // Orchestration auto-dispatch with role injection
+        let chan_resp = client
+            .post(format!("{}/api/orchestration/channels", base_url))
+            .json(&json!({
+                "name": "arch-dispatch-test",
+                "topic": "Test role injection",
+                "retention_days": 7,
+                "max_messages": 50
+            }))
+            .send()
+            .await
+            .unwrap_or_else(|e| panic!("create channel failed: {e}"));
+        let chan: Value = chan_resp
+            .json()
+            .await
+            .unwrap_or_else(|e| panic!("chan json failed: {e}"));
+        let chan_id = chan["id"].as_str().unwrap_or("");
+
+        let pub_resp = client
+            .post(format!(
+                "{}/api/orchestration/channels/{}/messages",
+                base_url, chan_id
+            ))
+            .json(&json!({
+                "sender_name": "User",
+                "recipient_name": "@LocalArch",
+                "content": "@LocalArch propose une architecture modulaire",
+                "auto_dispatch": true
+            }))
+            .send()
+            .await
+            .unwrap_or_else(|e| panic!("publish failed: {e}"));
+        assert_eq!(pub_resp.status(), StatusCode::OK);
+        let pub_val: Value = pub_resp
+            .json()
+            .await
+            .unwrap_or_else(|e| panic!("pub json failed: {e}"));
+        let replies = pub_val["replies"]
+            .as_array()
+            .unwrap_or_else(|| panic!("missing replies array"));
+        assert_eq!(replies.len(), 1);
+        assert_eq!(replies[0]["sender_name"], "LocalArch");
+        assert!(
+            replies[0]["content"]
+                .as_str()
+                .unwrap_or("")
+                .contains("ACK_ROLE_PROMPT")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_channel_retention_prune_and_markdown_export() {
+        let (base_url, state) = spawn_test_hub("/tmp").await;
+        let client = &state.http_client;
+
+        // Create channel with max_messages = 3
+        let chan_resp = client
+            .post(format!("{}/api/orchestration/channels", base_url))
+            .json(&json!({
+                "name": "retention-room",
+                "topic": "Purge automatique",
+                "retention_days": 10,
+                "max_messages": 3
+            }))
+            .send()
+            .await
+            .unwrap_or_else(|e| panic!("create channel failed: {e}"));
+        assert_eq!(chan_resp.status(), StatusCode::CREATED);
+        let chan: Value = chan_resp
+            .json()
+            .await
+            .unwrap_or_else(|e| panic!("chan json failed: {e}"));
+        let chan_id = chan["id"].as_str().unwrap_or("");
+        assert_eq!(chan["retention_days"], 10);
+        assert_eq!(chan["max_messages"], 3);
+
+        // Publish 5 messages
+        for i in 1..=5 {
+            let r = client
+                .post(format!(
+                    "{}/api/orchestration/channels/{}/messages",
+                    base_url, chan_id
+                ))
+                .json(&json!({
+                    "sender_name": "Tester",
+                    "content": format!("Message numero {}", i),
+                    "auto_dispatch": false
+                }))
+                .send()
+                .await
+                .unwrap_or_else(|e| panic!("msg {i} failed: {e}"));
+            assert_eq!(r.status(), StatusCode::OK);
+        }
+
+        // Verify only the last 3 messages (3, 4, 5) are retained
+        let msgs_resp = client
+            .get(format!(
+                "{}/api/orchestration/channels/{}/messages",
+                base_url, chan_id
+            ))
+            .send()
+            .await
+            .unwrap_or_else(|e| panic!("get messages failed: {e}"));
+        let msgs: Vec<Value> = msgs_resp
+            .json()
+            .await
+            .unwrap_or_else(|e| panic!("msgs json failed: {e}"));
+        assert_eq!(msgs.len(), 3);
+        assert_eq!(msgs[0]["content"], "Message numero 3");
+        assert_eq!(msgs[2]["content"], "Message numero 5");
+
+        // Update max_messages to 2 and trigger manual prune
+        let upd_resp = client
+            .put(format!(
+                "{}/api/orchestration/channels/{}",
+                base_url, chan_id
+            ))
+            .json(&json!({ "max_messages": 2 }))
+            .send()
+            .await
+            .unwrap_or_else(|e| panic!("update channel failed: {e}"));
+        assert_eq!(upd_resp.status(), StatusCode::OK);
+
+        let prune_resp = client
+            .post(format!(
+                "{}/api/orchestration/channels/{}/prune",
+                base_url, chan_id
+            ))
+            .send()
+            .await
+            .unwrap_or_else(|e| panic!("prune failed: {e}"));
+        let prune_val: Value = prune_resp
+            .json()
+            .await
+            .unwrap_or_else(|e| panic!("prune json failed: {e}"));
+        assert_eq!(prune_val["pruned"], 0);
+
+        // Export Markdown
+        let export_resp = client
+            .get(format!(
+                "{}/api/orchestration/channels/{}/export",
+                base_url, chan_id
+            ))
+            .send()
+            .await
+            .unwrap_or_else(|e| panic!("export failed: {e}"));
+        assert_eq!(export_resp.status(), StatusCode::OK);
+        let md = export_resp
+            .text()
+            .await
+            .unwrap_or_else(|e| panic!("export text failed: {e}"));
+        assert!(md.contains("# Orchestration Channel: #retention-room"));
+        assert!(!md.contains("Message numero 3"));
+        assert!(md.contains("Message numero 4"));
+        assert!(md.contains("Message numero 5"));
+    }
+
+    #[tokio::test]
+    async fn test_git_status_commit_and_revert_lifecycle() {
+        let tmp = tempfile::tempdir().unwrap_or_else(|e| panic!("tempdir failed: {e}"));
+        let repo_dir = tmp.path().to_string_lossy().to_string();
+
+        // Initialize temporary git repo
+        let _ = tokio::process::Command::new("git")
+            .args(["init"])
+            .current_dir(&repo_dir)
+            .output()
+            .await;
+        let _ = tokio::process::Command::new("git")
+            .args(["config", "user.email", "test@example.com"])
+            .current_dir(&repo_dir)
+            .output()
+            .await;
+        let _ = tokio::process::Command::new("git")
+            .args(["config", "user.name", "Test User"])
+            .current_dir(&repo_dir)
+            .output()
+            .await;
+
+        let file_path = tmp.path().join("hello.txt");
+        std::fs::write(&file_path, "ligne 1\n")
+            .unwrap_or_else(|e| panic!("write hello.txt failed: {e}"));
+        let _ = tokio::process::Command::new("git")
+            .args(["add", "-A"])
+            .current_dir(&repo_dir)
+            .output()
+            .await;
+        let _ = tokio::process::Command::new("git")
+            .args(["commit", "-m", "Initial commit"])
+            .current_dir(&repo_dir)
+            .output()
+            .await;
+
+        let (base_url, state) = spawn_test_hub(&repo_dir).await;
+        let client = &state.http_client;
+
+        // Modify hello.txt
+        std::fs::write(&file_path, "ligne 1\nligne 2 ajoutee\n")
+            .unwrap_or_else(|e| panic!("modify hello.txt failed: {e}"));
+
+        // 1. Check /api/git/status
+        let status_resp = client
+            .get(format!("{}/api/git/status", base_url))
+            .send()
+            .await
+            .unwrap_or_else(|e| panic!("git status failed: {e}"));
+        assert_eq!(status_resp.status(), StatusCode::OK);
+        let status_val: Value = status_resp
+            .json()
+            .await
+            .unwrap_or_else(|e| panic!("git status json failed: {e}"));
+        assert_eq!(
+            status_val["files"]
+                .as_array()
+                .map(|a| a.len())
+                .unwrap_or(0),
+            1
+        );
+        assert!(
+            status_val["diff"]
+                .as_str()
+                .unwrap_or("")
+                .contains("+ligne 2 ajoutee")
+        );
+
+        // 2. Revert hello.txt via /api/git/revert
+        let rev_resp = client
+            .post(format!("{}/api/git/revert", base_url))
+            .json(&json!({ "file": "hello.txt" }))
+            .send()
+            .await
+            .unwrap_or_else(|e| panic!("git revert failed: {e}"));
+        assert_eq!(rev_resp.status(), StatusCode::OK);
+
+        let status_after_rev: Value = client
+            .get(format!("{}/api/git/status", base_url))
+            .send()
+            .await
+            .unwrap_or_else(|e| panic!("status after revert failed: {e}"))
+            .json()
+            .await
+            .unwrap_or_else(|e| panic!("json failed: {e}"));
+        assert_eq!(
+            status_after_rev["files"]
+                .as_array()
+                .map(|a| a.len())
+                .unwrap_or(99),
+            0
+        );
+
+        // 3. Modify again and commit via /api/git/commit
+        std::fs::write(&file_path, "ligne 1\nligne 2 validee\n")
+            .unwrap_or_else(|e| panic!("write failed: {e}"));
+        let commit_resp = client
+            .post(format!("{}/api/git/commit", base_url))
+            .json(&json!({ "message": "feat: add second line" }))
+            .send()
+            .await
+            .unwrap_or_else(|e| panic!("git commit failed: {e}"));
+        assert_eq!(commit_resp.status(), StatusCode::OK);
+        let commit_val: Value = commit_resp
+            .json()
+            .await
+            .unwrap_or_else(|e| panic!("commit json failed: {e}"));
+        assert_eq!(commit_val["committed"], true);
+    }
+
+    #[tokio::test]
+    async fn test_native_terminal_websocket_streaming_and_raw_input() {
+        let mock_rpc_url = spawn_mock_bridge().await;
+        let (base_url, state) = spawn_test_hub("/tmp").await;
+        let client = &state.http_client;
+
+        let create_resp = client
+            .post(format!("{}/api/instances", base_url))
+            .json(&json!({
+                "name": "TermInstance",
+                "kind": "claude",
+                "transport": "http-rpc",
+                "endpoint_url": mock_rpc_url,
+                "bridge_url": mock_rpc_url
+            }))
+            .send()
+            .await
+            .unwrap_or_else(|e| panic!("create instance failed: {e}"));
+        let created: Value = create_resp
+            .json()
+            .await
+            .unwrap_or_else(|e| panic!("json failed: {e}"));
+        let inst_id = created["id"].as_str().unwrap_or("");
+
+        let ws_url = format!(
+            "{}/ws/instances/{}/terminal",
+            base_url.replacen("http://", "ws://", 1),
+            inst_id
+        );
+        let (mut ws, _) = connect_async(&ws_url)
+            .await
+            .unwrap_or_else(|e| panic!("terminal ws connect failed: {e}"));
+
+        // 1. Receive initial ANSI screen frame
+        let first_msg = tokio::time::timeout(Duration::from_secs(3), ws.next())
+            .await
+            .unwrap_or_else(|e| panic!("timeout waiting for initial screen: {e}"))
+            .unwrap_or_else(|| panic!("ws stream closed"))
+            .unwrap_or_else(|e| panic!("ws frame error: {e}"));
+        let first_txt = first_msg
+            .into_text()
+            .unwrap_or_else(|e| panic!("not text: {e}"));
+        let first_json: Value = serde_json::from_str(&first_txt)
+            .unwrap_or_else(|e| panic!("invalid json: {e}"));
+        assert_eq!(first_json["type"], "screen");
+        assert!(
+            first_json["data"]
+                .as_str()
+                .unwrap_or("")
+                .contains("thenewuser@container")
+        );
+
+        // 2. Send raw input keystroke and verify updated screen frame
+        ws.send(TungMessage::Text(
+            json!({
+                "type": "raw",
+                "data": "echo hello",
+                "special": false
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .unwrap_or_else(|e| panic!("ws send failed: {e}"));
+
+        let reply_msg = tokio::time::timeout(Duration::from_secs(3), ws.next())
+            .await
+            .unwrap_or_else(|e| panic!("timeout waiting for raw ack screen: {e}"))
+            .unwrap_or_else(|| panic!("ws closed"))
+            .unwrap_or_else(|e| panic!("ws error: {e}"));
+        let reply_txt = reply_msg
+            .into_text()
+            .unwrap_or_else(|e| panic!("not text: {e}"));
+        let reply_json: Value = serde_json::from_str(&reply_txt)
+            .unwrap_or_else(|e| panic!("invalid json: {e}"));
+        assert_eq!(reply_json["type"], "screen");
+        assert!(
+            reply_json["data"]
+                .as_str()
+                .unwrap_or("")
+                .contains("RAW_ACK")
+        );
     }
 }

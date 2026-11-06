@@ -1,4 +1,248 @@
 (() => {
+    let currentLang = localStorage.getItem("agent_hub_lang") || "en";
+
+    const I18N = {
+        en: {
+            appTitle: "Simply Agent Hub",
+            registeredClis: (count, online) => `${count} CLIs (${online} online)`,
+            noCliSelected: "No CLI selected",
+            activeCliReady: "Ready",
+            btnRefreshAll: "↻ Refresh Status",
+            tabConsole: "CLI Console, Roles & Native Terminal",
+            tabOrchestration: "Multi-CLI Orchestration Channels",
+            tabGit: "🔀 Git Diff & Commit",
+            tabInventory: "Container Fleet (SeaORM)",
+            tabRpc: "JSON-RPC Inspector",
+            cliSelectorTitle: "CLI Container Selection",
+            cliSelectorSubtitle: "Select, rename, assign a role, or authenticate any of your CLI instances.",
+            activeCliLabel: "Active CLI Instance",
+            btnAddCli: "+ Add CLI",
+            btnEditCli: "✎ Rename / Edit",
+            btnAuthCli: "🔑 Authenticate",
+            agentRoleTitle: "🎭 Agent Role & Mission",
+            roleInCollectiveLabel: "Role in collective",
+            rolePromptLabel: "Role Prompt (suggested default / customizable)",
+            btnSaveRole: "💾 Save Role",
+            btnOnboardCli: "🎭 Initialize Agent",
+            addCliFormTitle: "Add CLI Container",
+            editCliFormTitle: (name) => `Rename / Edit "${name}"`,
+            customNameLabel: "Custom Name",
+            cliAgentTypeLabel: "CLI Agent Kind",
+            defaultRoleLabel: "Default Role",
+            bridgeUrlLabel: "Auth/Tmux Bridge URL (optional)",
+            secretTokenLabel: "Secret / Token (optional)",
+            workingDirLabel: "Working Directory (cwd)",
+            btnSaveDatabase: "Save to Database",
+            btnCancel: "Cancel",
+            authPanelTitle: "Container Web Authentication",
+            authPanelSubtitle: "Authenticate the selected container without leaving this dashboard.",
+            btnCheckStatus: "Check Status",
+            btnGetDeviceCode: "Get Device Code / OAuth Link",
+            apiKeyInjectLabel: "Or inject an API key (OpenAI / Gemini / Anthropic)",
+            btnApplyKey: "Apply Key",
+            oauthCallbackLabel: "Or validate OAuth Callback URL (http://localhost:...)",
+            btnValidateOauth: "Validate OAuth",
+            btnConnectCli: "Connect to CLI",
+            btnNewSession: "+ Session / Thread",
+            btnNativeTerminal: "🖥 Native Terminal (Tmux/WS)",
+            btnCliWebServer: "🌐 CLI Web Server",
+            sessionsThreadsTitle: "Sessions / Threads",
+            selectConnectHint: "Select and connect a CLI instance",
+            btnInterrupt: "⏹ Interrupt",
+            btnClear: "Clear",
+            termDrawerTitle: "🖥 Interactive Native Terminal (Direct Tmux WebSocket)",
+            btnClose: "✕ Close",
+            btnSendPty: "Send to PTY ➤",
+            approvalTitle: "Tool approval required by CLI",
+            btnApprove: "Approve",
+            btnDecline: "Decline",
+            btnSend: "Send ➤",
+            orchChannelsTitle: "Orchestration Channels",
+            orchChannelsSubtitle: "Create a shared channel where multiple CLI instances (with distinct assigned roles) collaborate in real-time.",
+            activeChannelLabel: "Active Channel",
+            btnNewChannel: "+ New Channel",
+            btnDelete: "🗑 Delete",
+            createChannelTitle: "Create Channel",
+            channelNameLabel: "Channel Name",
+            descriptionLabel: "Description",
+            btnCreate: "Create",
+            clisJoinedChannelTitle: "CLIs in this Channel",
+            clisJoinedChannelHint: "Check the instances that participate in this channel's exchanges:",
+            btnSaveParticipants: "💾 Save Channel Participants",
+            retentionTitle: "🧹 Configurable Retention (SeaORM)",
+            retentionDaysLabel: "Retention (days, 0 = unlimited)",
+            maxMessagesLabel: "Max message count (0 = unlimited)",
+            btnSaveRetention: "💾 Apply & Prune",
+            btnExportMd: "📥 Export .md",
+            btnRefreshHistory: "↻ DB History",
+            btnBroadcast: "Broadcast ➤",
+            gitStatusTitle: "🔀 Workspace Git Status",
+            gitStatusSubtitle: "Inspect changes produced by your CLI agents, revert a file, or create a commit.",
+            gitCwdLabel: "Git Directory (cwd)",
+            btnAnalyze: "↻ Analyze",
+            activeBranchLabel: "Active branch: ",
+            modifiedFilesTitle: "Modified Files",
+            createCommitTitle: "Create Commit",
+            commitMsgLabel: "Commit Message",
+            btnGitCommit: "✅ Stage All (git add -A) & Commit",
+            recentCommitsTitle: "Recent Commits",
+            unifiedDiffTitle: "Unified Diff (`git diff HEAD`)",
+            btnRevertAll: "↩ Revert entire workspace",
+            inventoryTitle: "Registered CLI Container Fleet (SeaORM: SQLite / Postgres / MariaDB)",
+            inventorySubtitle: "Manage all your Codex, Antigravity, Claude, and Goose instances persisted in the database.",
+            btnNewCliContainer: "+ New CLI Container",
+            thInstanceName: "Instance Name",
+            thType: "Type",
+            thRole: "Assigned Role",
+            thTransport: "Transport",
+            thEndpoint: "Endpoint",
+            thStatus: "Status",
+            thActions: "Actions",
+            rpcTitle: "JSON-RPC 2.0 Frame Inspector & Orchestration Bus",
+            rpcSubtitle: "Real-time log of frames exchanged with CLI containers.",
+            btnClearLog: "Clear Log",
+            onlineBadge: "Online",
+            offlineBadge: "Offline",
+            btnUse: "Use",
+            btnRename: "✎ Rename",
+            connectingTo: (name) => `Connecting to ${name}...`,
+            connectedTo: (name) => `Connected (${name} — Tmux PTY)`,
+            disconnected: "Disconnected",
+            tmuxSessionReady: "(Tmux session ready)",
+            cleanWorkingTree: "Clean working tree (0 modified files)",
+            noDiffDetected: "No uncommitted changes in this repository.",
+            roleSaved: (role) => `Role "${role}" and system prompt saved in SeaORM database.`,
+            onboardingSent: (role, name) => `Sending identity and role prompt (${role}) to ${name}...`,
+            onboardSuccess: (role) => `Role "${role}" initialized.`,
+            participantsUpdated: "Channel participants updated in SeaORM database.",
+            retentionApplied: (days, max, pruned) => `Retention applied (${days}d / max ${max} messages). Pruned: ${pruned}.`,
+        },
+        fr: {
+            appTitle: "Simply Agent Hub",
+            registeredClis: (count, online) => `${count} CLIs (${online} en ligne)`,
+            noCliSelected: "Aucun CLI sélectionné",
+            activeCliReady: "Prêt",
+            btnRefreshAll: "↻ Actualiser l'état",
+            tabConsole: "Console CLI, Rôles & Terminal Natif",
+            tabOrchestration: "Canaux d'Orchestration Multi-CLIs",
+            tabGit: "🔀 Git Diff & Commit",
+            tabInventory: "Parc de Conteneurs (SeaORM)",
+            tabRpc: "Inspecteur JSON-RPC",
+            cliSelectorTitle: "Sélection du Conteneur CLI",
+            cliSelectorSubtitle: "Choisissez, renommez, attribuez un rôle ou authentifiez n'importe laquelle de vos instances.",
+            activeCliLabel: "Instance CLI active",
+            btnAddCli: "+ Ajouter un CLI",
+            btnEditCli: "✎ Renommer / Éditer",
+            btnAuthCli: "🔑 Authentifier",
+            agentRoleTitle: "🎭 Rôle & Mission de l'Agent",
+            roleInCollectiveLabel: "Rôle dans le collectif",
+            rolePromptLabel: "Prompt de rôle (par défaut proposé / paramétrable)",
+            btnSaveRole: "💾 Sauver le rôle",
+            btnOnboardCli: "🎭 Initialiser l'agent",
+            addCliFormTitle: "Ajouter un conteneur CLI",
+            editCliFormTitle: (name) => `Renommer / Modifier « ${name} »`,
+            customNameLabel: "Nom personnalisé",
+            cliAgentTypeLabel: "Type d'agent CLI",
+            defaultRoleLabel: "Rôle par défaut",
+            bridgeUrlLabel: "URL du Pont d'Auth/Tmux (optionnel)",
+            secretTokenLabel: "Secret / Token (optionnel)",
+            workingDirLabel: "Répertoire de travail (cwd)",
+            btnSaveDatabase: "Enregistrer en base",
+            btnCancel: "Annuler",
+            authPanelTitle: "Authentification Web du Conteneur",
+            authPanelSubtitle: "Authentifiez le conteneur sélectionné sans quitter cette interface.",
+            btnCheckStatus: "Vérifier statut",
+            btnGetDeviceCode: "Obtenir Code Device / Lien OAuth",
+            apiKeyInjectLabel: "Ou injecter une clé API (OpenAI / Gemini / Anthropic)",
+            btnApplyKey: "Appliquer la clé",
+            oauthCallbackLabel: "Ou valider une URL Callback OAuth (http://localhost:...)",
+            btnValidateOauth: "Valider OAuth",
+            btnConnectCli: "Connecter au CLI",
+            btnNewSession: "+ Session / Thread",
+            btnNativeTerminal: "🖥 Terminal Natif (Tmux/WS)",
+            btnCliWebServer: "🌐 Serveur Web du CLI",
+            sessionsThreadsTitle: "Sessions / Threads",
+            selectConnectHint: "Sélectionnez et connectez un CLI",
+            btnInterrupt: "⏹ Interrompre",
+            btnClear: "Effacer",
+            termDrawerTitle: "🖥 Terminal Natif Interactif (Tmux Direct WebSocket)",
+            btnClose: "✕ Fermer",
+            btnSendPty: "Envoyer au PTY ➤",
+            approvalTitle: "Autorisation d'outil requise par le CLI",
+            btnApprove: "Autoriser",
+            btnDecline: "Refuser",
+            btnSend: "Envoyer ➤",
+            orchChannelsTitle: "Canaux d'Orchestration",
+            orchChannelsSubtitle: "Créez un canal partagé où plusieurs instances CLI (avec leurs rôles respectifs) échangent des messages en temps réel.",
+            activeChannelLabel: "Canal actif",
+            btnNewChannel: "+ Nouveau Canal",
+            btnDelete: "🗑 Supprimer",
+            createChannelTitle: "Créer un canal",
+            channelNameLabel: "Nom du canal",
+            descriptionLabel: "Description",
+            btnCreate: "Créer",
+            clisJoinedChannelTitle: "CLIs connectés à ce canal",
+            clisJoinedChannelHint: "Cochez les instances qui participent aux échanges de ce canal :",
+            btnSaveParticipants: "💾 Enregistrer les participants du canal",
+            retentionTitle: "🧹 Rétention Paramétrable (SeaORM)",
+            retentionDaysLabel: "Rétention (jours, 0 = illimité)",
+            maxMessagesLabel: "Nombre max de messages conservés (0 = illimité)",
+            btnSaveRetention: "💾 Appliquer & Purger",
+            btnExportMd: "📥 Export .md",
+            btnRefreshHistory: "↻ Historique DB",
+            btnBroadcast: "Diffuser ➤",
+            gitStatusTitle: "🔀 État Git du Workspace",
+            gitStatusSubtitle: "Inspectez les modifications produites par vos agents CLI, annulez un fichier ou créez un commit.",
+            gitCwdLabel: "Répertoire Git (cwd)",
+            btnAnalyze: "↻ Analyser",
+            activeBranchLabel: "Branche active : ",
+            modifiedFilesTitle: "Fichiers modifiés",
+            createCommitTitle: "Créer un Commit",
+            commitMsgLabel: "Message de commit",
+            btnGitCommit: "✅ Tout indexer (git add -A) & Commit",
+            recentCommitsTitle: "Derniers Commits",
+            unifiedDiffTitle: "Diff Unifié (`git diff HEAD`)",
+            btnRevertAll: "↩ Revert tout le workspace",
+            inventoryTitle: "Parc de Conteneurs CLI enregistrés (SeaORM : SQLite / Postgres / MariaDB)",
+            inventorySubtitle: "Gérez l'ensemble de vos instances Codex, Antigravity, Claude et Goose persistées en base de données.",
+            btnNewCliContainer: "+ Nouveau Conteneur CLI",
+            thInstanceName: "Nom de l'instance",
+            thType: "Type",
+            thRole: "Rôle attribué",
+            thTransport: "Transport",
+            thEndpoint: "Endpoint",
+            thStatus: "État",
+            thActions: "Actions",
+            rpcTitle: "Inspecteur de trames JSON-RPC 2.0 & Bus d'Orchestration",
+            rpcSubtitle: "Journal temps réel des échanges avec les conteneurs CLI.",
+            btnClearLog: "Vider le journal",
+            onlineBadge: "En ligne",
+            offlineBadge: "Hors ligne",
+            btnUse: "Utiliser",
+            btnRename: "✎ Renommer",
+            connectingTo: (name) => `Connexion à ${name}...`,
+            connectedTo: (name) => `Connecté (${name} — Tmux PTY)`,
+            disconnected: "Déconnecté",
+            tmuxSessionReady: "(Session tmux prête)",
+            cleanWorkingTree: "Arbre de travail propre (0 fichier modifié)",
+            noDiffDetected: "Aucune modification non commitée dans ce dépôt.",
+            roleSaved: (role) => `Rôle « ${role} » et prompt système enregistrés en base SeaORM.`,
+            onboardingSent: (role, name) => `Envoi du prompt d'identité et de rôle (${role}) à ${name}...`,
+            onboardSuccess: (role) => `Rôle « ${role} » initialisé.`,
+            participantsUpdated: "Participants du canal mis à jour en base SeaORM.",
+            retentionApplied: (days, max, pruned) => `Politique appliquée (${days}j / max ${max} messages). Messages purgés: ${pruned}.`,
+        }
+    };
+
+    function t(key, ...args) {
+        const dict = I18N[currentLang] || I18N.en;
+        const entry = dict[key] ?? I18N.en[key] ?? key;
+        if (typeof entry === "function") {
+            return entry(...args);
+        }
+        return entry;
+    }
+
     const state = {
         instances: [],
         activeInstanceId: null,
@@ -134,20 +378,27 @@
         return state.instances.find((i) => i.id === state.activeInstanceId) || null;
     }
 
+    window.switchTab = function (target) {
+        document.querySelectorAll(".tab-btn").forEach((b) => {
+            const isMatch = b.getAttribute("data-tab") === target;
+            b.classList.toggle("active", isMatch);
+            b.setAttribute("aria-selected", isMatch ? "true" : "false");
+        });
+        document.querySelectorAll(".tab-panel").forEach((panel) => {
+            panel.classList.toggle("active", panel.id === `tab-${target}`);
+        });
+        if (target === "git") {
+            loadGitStatus();
+        }
+    };
+
+    window.switchView = window.switchTab;
+
     // ─── Tab Navigation ──────────────────────────────────────────────────────
     document.querySelectorAll(".tab-btn").forEach((btn) => {
         btn.addEventListener("click", () => {
             const target = btn.getAttribute("data-tab");
-            document.querySelectorAll(".tab-btn").forEach((b) => {
-                b.classList.toggle("active", b === btn);
-                b.setAttribute("aria-selected", b === btn ? "true" : "false");
-            });
-            document.querySelectorAll(".tab-panel").forEach((panel) => {
-                panel.classList.toggle("active", panel.id === `tab-${target}`);
-            });
-            if (target === "git") {
-                loadGitStatus();
-            }
+            window.switchTab(target);
         });
     });
 
@@ -156,15 +407,37 @@
     // ═════════════════════════════════════════════════════════════════════════
     async function loadRolePresets() {
         try {
-            const resp = await fetch("/api/roles/presets");
+            const resp = await fetch(`/api/roles/presets?lang=${encodeURIComponent(currentLang)}`);
             const list = await resp.json();
             if (Array.isArray(list)) {
+                state.rolePresets = {};
                 list.forEach((r) => {
                     state.rolePresets[r.id] = r;
                 });
+                renderRoleOptions();
             }
         } catch {
             // ignore
+        }
+    }
+
+    function renderRoleOptions() {
+        const sel1 = $("cli-role-selector");
+        const sel2 = $("cli-form-role");
+        const currentVal = sel1 ? sel1.value : "developer";
+
+        const opts = Object.values(state.rolePresets).map(
+            (p) => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.label)}</option>`
+        ).join("");
+
+        if (opts) {
+            if (sel1) {
+                sel1.innerHTML = opts;
+                sel1.value = currentVal;
+            }
+            if (sel2) {
+                sel2.innerHTML = opts;
+            }
         }
     }
 
@@ -189,15 +462,16 @@
             renderChannelParticipants();
             updateConsoleBadges();
         } catch (err) {
-            appendMsg("console-messages", "system", "Erreur", `Impossible de charger les instances: ${err.message}`);
+            appendMsg("console-messages", "system", "Error", `Unable to load instances: ${err.message}`);
         }
     }
 
     function renderCliSelector() {
         const sel = $("cli-selector");
+        if (!sel) return;
         sel.innerHTML = "";
         const onlineCount = state.instances.filter((i) => i.online).length;
-        $("header-instances-count").textContent = `${state.instances.length} CLIs (${onlineCount} en ligne)`;
+        $("header-instances-count").textContent = t("registeredClis", state.instances.length, onlineCount);
 
         state.instances.forEach((inst) => {
             const opt = document.createElement("option");
@@ -214,7 +488,7 @@
             headerBadge.textContent = `${active.name} (${active.role || active.kind})`;
             headerBadge.className = `badge ${active.online ? "badge-online" : "badge-offline"}`;
         } else {
-            headerBadge.textContent = "Aucun CLI";
+            headerBadge.textContent = t("noCliSelected");
             headerBadge.className = "badge";
         }
     }
@@ -258,7 +532,7 @@
                 "console-messages",
                 "system",
                 inst.name,
-                `Rôle « ${role} » et prompt système enregistrés en base SeaORM.`
+                t("roleSaved", role)
             );
         }
     });
@@ -280,69 +554,72 @@
         appendMsg(
             "console-messages",
             "user",
-            "Initialisation Rôle",
-            `Envoi du prompt d'identité et de rôle (${role}) à ${inst.name}...`
+            "Role Onboarding",
+            t("onboardingSent", role, inst.name)
         );
         try {
             const resp = await fetch(`/api/instances/${inst.id}/onboard`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ custom_prompt: role_prompt }),
+                body: JSON.stringify({ custom_prompt: role_prompt, lang: currentLang }),
             });
             const data = await resp.json();
             logRpc("in", `onboard:${inst.name}`, data);
             if (data.error) throw new Error(data.error);
-            appendMsg("console-messages", "agent", `${inst.name} [${data.role}]`, data.reply || "Rôle initialisé.");
+            appendMsg("console-messages", "agent", `${inst.name} [${data.role}]`, data.reply || t("onboardSuccess", data.role));
         } catch (err) {
-            appendMsg("console-messages", "system", inst.name, `Erreur d'initialisation du rôle: ${err.message}`);
+            appendMsg("console-messages", "system", inst.name, `Onboarding error: ${err.message}`);
         }
     });
 
     function renderInventoryTable() {
-        const tbody = $("inventory-tbody");
-        if (!tbody) return;
-        tbody.innerHTML = "";
-        state.instances.forEach((inst) => {
-            const tr = document.createElement("tr");
-            tr.innerHTML = `
-                <td><strong>${escapeHtml(inst.name)}</strong></td>
-                <td><span class="badge badge-tier">${escapeHtml(inst.kind.toUpperCase())}</span></td>
-                <td><span class="badge badge-online">${escapeHtml(inst.role || "developer")}</span></td>
-                <td><code>${escapeHtml(inst.transport)}</code></td>
-                <td><code>${escapeHtml(inst.endpoint_url)}</code></td>
-                <td><code>${escapeHtml(inst.default_cwd)}</code></td>
-                <td>
-                    <span class="badge ${inst.online ? "badge-online" : "badge-offline"}" title="${escapeHtml(inst.status_detail)}">
-                        ${inst.online ? "En ligne" : "Hors ligne"}
-                    </span>
-                </td>
-                <td>
-                    <div class="btn-row" style="margin-top:0;">
-                        <button class="btn btn-secondary btn-sm" data-action="select" data-id="${inst.id}">Utiliser</button>
-                        <button class="btn btn-secondary btn-sm" data-action="edit" data-id="${inst.id}">✎ Renommer</button>
-                        <button class="btn btn-danger btn-sm" data-action="delete" data-id="${inst.id}">🗑</button>
-                    </div>
-                </td>
-            `;
-            tbody.appendChild(tr);
-        });
+        const tbodies = [ $("inventory-tbody"), $("instances-tbody") ].filter(Boolean);
+        if (tbodies.length === 0) return;
 
-        tbody.querySelectorAll("button[data-action]").forEach((b) => {
-            b.addEventListener("click", async () => {
-                const id = b.getAttribute("data-id");
-                const act = b.getAttribute("data-action");
-                state.activeInstanceId = id;
-                renderCliSelector();
-                renderRolePanel();
-                updateConsoleBadges();
-                if (act === "select") {
-                    document.querySelector('.tab-btn[data-tab="console"]').click();
-                } else if (act === "edit") {
-                    document.querySelector('.tab-btn[data-tab="console"]').click();
-                    openEditCliForm();
-                } else if (act === "delete") {
-                    await deleteActiveCli();
-                }
+        tbodies.forEach((tbody) => {
+            tbody.innerHTML = "";
+            state.instances.forEach((inst) => {
+                const tr = document.createElement("tr");
+                tr.innerHTML = `
+                    <td><strong>${escapeHtml(inst.name)}</strong></td>
+                    <td><span class="badge badge-tier">${escapeHtml(inst.kind.toUpperCase())}</span></td>
+                    <td><span class="badge badge-online">${escapeHtml(inst.role || "developer")}</span></td>
+                    <td><code>${escapeHtml(inst.transport)}</code></td>
+                    <td><code>${escapeHtml(inst.endpoint_url)}</code></td>
+                    <td><code>${escapeHtml(inst.default_cwd)}</code></td>
+                    <td>
+                        <span class="badge ${inst.online ? "badge-online" : "badge-offline"}" title="${escapeHtml(inst.status_detail)}">
+                            ${inst.online ? t("onlineBadge") : t("offlineBadge")}
+                        </span>
+                    </td>
+                    <td>
+                        <div class="btn-row" style="margin-top:0;">
+                            <button class="btn btn-secondary btn-sm" data-action="select" data-id="${inst.id}">${t("btnUse")}</button>
+                            <button class="btn btn-secondary btn-sm" data-action="edit" data-id="${inst.id}">${t("btnRename")}</button>
+                            <button class="btn btn-danger btn-sm" data-action="delete" data-id="${inst.id}">🗑</button>
+                        </div>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            tbody.querySelectorAll("button[data-action]").forEach((b) => {
+                b.addEventListener("click", async () => {
+                    const id = b.getAttribute("data-id");
+                    const act = b.getAttribute("data-action");
+                    state.activeInstanceId = id;
+                    renderCliSelector();
+                    renderRolePanel();
+                    updateConsoleBadges();
+                    if (act === "select") {
+                        window.switchTab("console");
+                    } else if (act === "edit") {
+                        window.switchTab("console");
+                        openEditCliForm();
+                    } else if (act === "delete") {
+                        await deleteActiveCli();
+                    }
+                });
             });
         });
     }
@@ -369,7 +646,7 @@
     });
 
     function openAddCliForm() {
-        $("cli-form-title").textContent = "Ajouter un nouveau conteneur CLI";
+        $("cli-form-title").textContent = t("addCliFormTitle");
         $("cli-form-id").value = "";
         $("cli-form-name").value = "";
         $("cli-form-kind").value = "codex";
@@ -386,7 +663,7 @@
     function openEditCliForm() {
         const inst = getActiveInstance();
         if (!inst) return;
-        $("cli-form-title").textContent = `Renommer / Modifier « ${inst.name} »`;
+        $("cli-form-title").textContent = t("editCliFormTitle", inst.name);
         $("cli-form-id").value = inst.id;
         $("cli-form-name").value = inst.name;
         $("cli-form-kind").value = inst.kind;
@@ -425,7 +702,7 @@
 
     $("btn-open-add-cli").addEventListener("click", openAddCliForm);
     $("btn-inventory-add").addEventListener("click", () => {
-        document.querySelector('.tab-btn[data-tab="console"]').click();
+        window.switchTab("console");
         openAddCliForm();
     });
     $("btn-open-rename-cli").addEventListener("click", openEditCliForm);
@@ -434,7 +711,7 @@
     $("btn-save-cli").addEventListener("click", async () => {
         const id = $("cli-form-id").value.trim();
         const payload = {
-            name: $("cli-form-name").value.trim() || "Nouveau CLI",
+            name: $("cli-form-name").value.trim() || "New CLI",
             kind: $("cli-form-kind").value,
             role: $("cli-form-role").value,
             transport: $("cli-form-transport").value,
@@ -456,13 +733,14 @@
             state.activeInstanceId = saved.id;
             $("cli-form-box").classList.add("hidden");
             await loadInstances();
-            appendMsg("console-messages", "system", "Base SeaORM", `Instance « ${saved.name} » (${saved.role}) enregistrée.`);
+            appendMsg("console-messages", "system", "SeaORM", `Instance "${saved.name}" (${saved.role}) saved.`);
         }
     });
 
     async function deleteActiveCli() {
         const inst = getActiveInstance();
         if (!inst) return;
+        if (!confirm(`Delete CLI instance "${inst.name}"?`)) return;
         await fetch(`/api/instances/${inst.id}`, { method: "DELETE" });
         state.activeInstanceId = null;
         await loadInstances();
@@ -483,7 +761,7 @@
         if (!inst) return;
         const box = $("auth-result-box");
         box.classList.remove("hidden");
-        box.textContent = `Exécution (${action}) sur ${inst.name}...`;
+        box.textContent = `Running (${action}) on ${inst.name}...`;
 
         try {
             const resp = await fetch(`/api/instances/${inst.id}/auth`, {
@@ -494,15 +772,15 @@
             const data = await resp.json();
             logRpc("in", `auth:${inst.name}`, data);
             const auth = data.auth || {};
-            let html = `<strong>Instance :</strong> ${escapeHtml(inst.name)}\n`;
+            let html = `<strong>Instance:</strong> ${escapeHtml(inst.name)}\n`;
             if (auth.authenticated !== undefined) {
-                html += `<strong>Authentifié :</strong> ${auth.authenticated ? "OUI ✓" : "NON (Authentification requise)"}\n`;
+                html += `<strong>Authenticated:</strong> ${auth.authenticated ? "YES ✓" : "NO (Authentication required)"}\n`;
             }
             if (auth.url) {
-                html += `<strong>Lien d'authentification :</strong> <a href="${escapeHtml(auth.url)}" target="_blank" rel="noopener">${escapeHtml(auth.url)}</a>\n`;
+                html += `<strong>Auth URL:</strong> <a href="${escapeHtml(auth.url)}" target="_blank" rel="noopener">${escapeHtml(auth.url)}</a>\n`;
             }
             if (auth.code) {
-                html += `<strong>Code à usage unique :</strong> <span style="color:var(--accent);font-size:1.05rem;font-weight:700;">${escapeHtml(auth.code)}</span>\n`;
+                html += `<strong>Device Code:</strong> <span style="color:var(--accent);font-size:1.05rem;font-weight:700;">${escapeHtml(auth.code)}</span>\n`;
             }
             if (auth.detail || auth.raw) {
                 html += `\n${escapeHtml(auth.detail || auth.raw)}`;
@@ -510,7 +788,7 @@
             box.innerHTML = html;
             await loadInstances();
         } catch (err) {
-            box.textContent = `Erreur auth: ${err.message}`;
+            box.textContent = `Auth error: ${err.message}`;
         }
     }
 
@@ -541,14 +819,14 @@
         drawer.classList.remove("hidden");
         const viewport = $("terminal-viewport");
         const statusEl = $("terminal-ws-status");
-        statusEl.textContent = `Connexion à ${inst.name}...`;
+        statusEl.textContent = t("connectingTo", inst.name);
         statusEl.className = "badge";
 
         const ws = new WebSocket(`${wsBaseUrl()}/ws/instances/${encodeURIComponent(inst.id)}/terminal`);
         state.terminalWs = ws;
 
         ws.onopen = () => {
-            statusEl.textContent = `Connecté (${inst.name} — Tmux PTY)`;
+            statusEl.textContent = t("connectedTo", inst.name);
             statusEl.className = "badge badge-online";
             viewport.focus();
         };
@@ -557,7 +835,7 @@
             try {
                 const msg = JSON.parse(ev.data);
                 if (msg.type === "screen") {
-                    viewport.innerHTML = ansiToHtml(msg.data || "(Session tmux prête)");
+                    viewport.innerHTML = ansiToHtml(msg.data || t("tmuxSessionReady"));
                     viewport.scrollTop = viewport.scrollHeight;
                 }
             } catch {
@@ -566,10 +844,39 @@
         };
 
         ws.onclose = () => {
-            statusEl.textContent = "Déconnecté";
+            statusEl.textContent = t("disconnected");
             statusEl.className = "badge badge-offline";
         };
     }
+
+    window.connectNativeTerminal = connectNativeTerminal;
+    window.openNativeTerminal = connectNativeTerminal;
+    window.openTerminalModal = function (id) {
+        if (id) {
+            state.activeInstanceId = id;
+            renderCliSelector();
+        }
+        connectNativeTerminal();
+    };
+
+    window.closeModal = function (modalName) {
+        if (modalName === "terminal-modal" || modalName === "terminal") {
+            $("native-terminal-drawer").classList.add("hidden");
+            if (state.terminalWs) {
+                state.terminalWs.close();
+                state.terminalWs = null;
+            }
+        }
+    };
+
+    window.sendTerminalLine = function () {
+        const input = $("terminal-cmd-input");
+        const text = input.value;
+        input.value = "";
+        if (state.terminalWs?.readyState === WebSocket.OPEN) {
+            state.terminalWs.send(JSON.stringify({ type: "line", text }));
+        }
+    };
 
     $("btn-cli-tmux").addEventListener("click", () => {
         const drawer = $("native-terminal-drawer");
@@ -595,8 +902,6 @@
     $("btn-term-refresh").addEventListener("click", () => {
         if (state.terminalWs?.readyState === WebSocket.OPEN) {
             state.terminalWs.send(JSON.stringify({ type: "refresh" }));
-        } else {
-            connectNativeTerminal();
         }
     });
 
@@ -614,91 +919,97 @@
 
     $("terminal-input-form").addEventListener("submit", (e) => {
         e.preventDefault();
-        const input = $("terminal-cmd-input");
-        const text = input.value;
-        input.value = "";
-        if (state.terminalWs?.readyState === WebSocket.OPEN) {
-            state.terminalWs.send(JSON.stringify({ type: "line", text }));
-        }
+        window.sendTerminalLine();
     });
 
     $("terminal-viewport").addEventListener("keydown", (e) => {
         if (!state.terminalWs || state.terminalWs.readyState !== WebSocket.OPEN) return;
-        if (e.ctrlKey && e.key.toLowerCase() === "c") {
-            e.preventDefault();
+        e.preventDefault();
+        if (e.ctrlKey && e.key === "c") {
             state.terminalWs.send(JSON.stringify({ type: "raw", data: "C-c", special: true }));
         } else if (e.key === "Enter") {
-            e.preventDefault();
             state.terminalWs.send(JSON.stringify({ type: "raw", data: "Enter", special: true }));
         } else if (e.key === "Backspace") {
-            e.preventDefault();
             state.terminalWs.send(JSON.stringify({ type: "raw", data: "BSpace", special: true }));
         } else if (e.key === "ArrowUp") {
-            e.preventDefault();
             state.terminalWs.send(JSON.stringify({ type: "raw", data: "Up", special: true }));
         } else if (e.key === "ArrowDown") {
-            e.preventDefault();
             state.terminalWs.send(JSON.stringify({ type: "raw", data: "Down", special: true }));
-        } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
-            e.preventDefault();
+        } else if (e.key.length === 1) {
             state.terminalWs.send(JSON.stringify({ type: "raw", data: e.key, special: false }));
         }
     });
 
+    $("btn-cli-native-web").addEventListener("click", () => {
+        const inst = getActiveInstance();
+        if (!inst) return;
+        window.open(`/api/instances/${encodeURIComponent(inst.id)}/web/`, "_blank");
+    });
+
     // ═════════════════════════════════════════════════════════════════════════
-    // 4. UNIFIED ACTIVE CLI CONSOLE (Codex WS/Unix, Goose ACP, Claude/Agy RPC)
+    // 4. ACTIVE CONSOLE CHAT & CLIENT PROTOCOLS (CODEX WS, GOOSE ACP, HTTP RPC)
     // ═════════════════════════════════════════════════════════════════════════
     function updateConsoleBadges() {
         const inst = getActiveInstance();
-        $("console-conn-badge").textContent = state.connected ? "Flux Connecté" : "Prêt";
-        $("console-conn-badge").className = `badge ${state.connected ? "badge-online" : ""}`;
-        $("console-instance-badge").textContent = inst ? `${inst.name} [${inst.kind.toUpperCase()}]` : "Aucun CLI";
-        $("console-role-badge").textContent = inst ? `Rôle: ${inst.role || "developer"}` : "-";
-        $("console-session-badge").textContent = state.activeSessionId
-            ? `Session/Thread : ${state.activeSessionId}`
-            : "Session auto";
+        const connBadge = $("console-conn-badge");
+        const instBadge = $("console-instance-badge");
+        const roleBadge = $("console-role-badge");
+        const sessBadge = $("console-session-badge");
+
+        if (inst) {
+            instBadge.textContent = `${inst.name} [${inst.kind.toUpperCase()}]`;
+            roleBadge.textContent = inst.role || "developer";
+            roleBadge.className = "badge badge-online";
+        } else {
+            instBadge.textContent = "-";
+            roleBadge.textContent = "-";
+        }
+
+        if (state.connected) {
+            connBadge.textContent = "Connected";
+            connBadge.className = "badge badge-online";
+        } else {
+            connBadge.textContent = "Standby";
+            connBadge.className = "badge";
+        }
+
+        sessBadge.textContent = state.activeSessionId ? `Session: ${state.activeSessionId.substring(0, 8)}...` : "Session: -";
         $("btn-console-interrupt").classList.toggle("hidden", !state.turnRunning);
     }
 
     function renderSessionsList() {
-        const listEl = $("cli-sessions-list");
-        listEl.innerHTML = "";
+        const container = $("cli-sessions-list");
+        container.innerHTML = "";
         const inst = getActiveInstance();
         if (!inst) return;
-        const sessions = state.sessionsByInstance[inst.id] || [];
-        if (!sessions.length) {
-            listEl.innerHTML = `<div class="field-hint">Aucune session enregistrée pour ${escapeHtml(inst.name)}</div>`;
+        const list = state.sessionsByInstance[inst.id] || [];
+        if (list.length === 0) {
+            container.innerHTML = `<div class="field-hint">${t("selectConnectHint")}</div>`;
             return;
         }
-        sessions.forEach((s) => {
-            const id = s.id || s.threadId || s.sessionId || String(s);
+        list.forEach((s) => {
             const div = document.createElement("div");
-            div.className = `session-item ${state.activeSessionId === id ? "active" : ""}`;
-            div.innerHTML = `
-                <span class="session-item-id">${escapeHtml(id)}</span>
-                <span class="session-item-preview">${escapeHtml(s.preview || inst.default_cwd)}</span>
-            `;
+            div.className = `session-item ${s.id === state.activeSessionId ? "active" : ""}`;
+            div.innerHTML = `<strong>${escapeHtml(s.title || s.id)}</strong><br><small style="color:var(--text-muted);">${s.id}</small>`;
             div.addEventListener("click", () => {
-                state.activeSessionId = id;
+                state.activeSessionId = s.id;
                 updateConsoleBadges();
                 renderSessionsList();
             });
-            listEl.appendChild(div);
+            container.appendChild(div);
         });
     }
 
-    function sendActiveWsRpc(method, params = {}, isNotification = false) {
-        if (!state.ws || state.ws.readyState !== WebSocket.OPEN) {
-            return Promise.reject(new Error("WebSocket non connecté"));
-        }
-        const inst = getActiveInstance();
-        const msg = { jsonrpc: "2.0", method, params };
-        if (!isNotification) msg.id = nextId();
-        logRpc("out", inst?.name || "cli", msg);
-        state.ws.send(JSON.stringify(msg));
-        if (isNotification) return Promise.resolve();
+    async function sendActiveWsRpc(method, params = {}) {
         return new Promise((resolve, reject) => {
-            state.pendingRequests.set(msg.id, { resolve, reject });
+            if (!state.ws || state.ws.readyState !== WebSocket.OPEN) {
+                return reject(new Error("WebSocket not connected"));
+            }
+            const id = nextId();
+            state.pendingRequests.set(id, { resolve, reject });
+            const payload = { jsonrpc: "2.0", id, method, params };
+            logRpc("out", method, payload);
+            state.ws.send(JSON.stringify(payload));
         });
     }
 
@@ -711,187 +1022,180 @@
             state.ws = null;
         }
 
-        if (inst.kind === "claude" || inst.kind === "antigravity" || inst.transport === "rpc") {
+        const wsEndpoint =
+            inst.kind === "codex"
+                ? `${wsBaseUrl()}/ws/codex?instance_id=${encodeURIComponent(inst.id)}`
+                : inst.kind === "goose"
+                ? `${wsBaseUrl()}/ws/goose?instance_id=${encodeURIComponent(inst.id)}`
+                : null;
+
+        if (!wsEndpoint) {
             state.connected = true;
             updateConsoleBadges();
-            appendMsg(
-                "console-messages",
-                "system",
-                inst.name,
-                `Connecté au pont JSON-RPC/Tmux (${inst.endpoint_url}) avec le rôle « ${inst.role} ».`
-            );
+            appendMsg("console-messages", "system", inst.name, `Instance connected via HTTP RPC (${inst.endpoint_url}).`);
             return;
         }
 
-        const route = inst.kind === "goose" ? "/ws/goose" : "/ws/codex";
-        const wsUrl = `${wsBaseUrl()}${route}?instance_id=${encodeURIComponent(inst.id)}`;
-        appendMsg("console-messages", "system", inst.name, `Ouverture du flux temps réel (${inst.endpoint_url})...`);
-
-        const ws = new WebSocket(wsUrl);
+        appendMsg("console-messages", "system", inst.name, `Connecting via bridge: ${wsEndpoint}`);
+        const ws = new WebSocket(wsEndpoint);
         state.ws = ws;
 
         ws.onopen = async () => {
             state.connected = true;
             updateConsoleBadges();
-            try {
-                if (inst.kind === "codex") {
+            appendMsg("console-messages", "system", inst.name, `WebSocket bridge established with ${inst.name}.`);
+
+            if (inst.kind === "codex") {
+                try {
                     await sendActiveWsRpc("initialize", {
                         clientInfo: { name: "simply-agent-hub", version: "0.2.0" },
-                        capabilities: {},
+                        capabilities: { experimental: {} },
                     });
-                    await sendActiveWsRpc("initialized", {}, true);
-                    const res = await sendActiveWsRpc("thread/list", {});
-                    const list = res?.data || res?.threads || [];
-                    state.sessionsByInstance[inst.id] = list;
-                    if (list.length > 0 && !state.activeSessionId) {
-                        state.activeSessionId = list[0].id || list[0].threadId;
-                    }
-                    renderSessionsList();
-                    updateConsoleBadges();
-                    appendMsg("console-messages", "system", inst.name, "Handshake Codex JSON-RPC réussi.");
-                } else if (inst.kind === "goose") {
+                    ws.send(JSON.stringify({ jsonrpc: "2.0", method: "initialized", params: {} }));
+                    await createNewSessionOnActiveCli();
+                } catch (e) {
+                    appendMsg("console-messages", "system", "Init Error", e.message);
+                }
+            } else if (inst.kind === "goose") {
+                try {
                     await sendActiveWsRpc("initialize", {
                         protocolVersion: 1,
                         clientCapabilities: { fs: { readTextFile: true, writeTextFile: true }, terminal: true },
                         clientInfo: { name: "simply-agent-hub", version: "0.2.0" },
                     });
-                    appendMsg("console-messages", "system", inst.name, "Handshake Goose ACP réussi.");
                     await createNewSessionOnActiveCli();
+                } catch (e) {
+                    appendMsg("console-messages", "system", "Init Error", e.message);
                 }
-            } catch (err) {
-                appendMsg("console-messages", "system", inst.name, `Erreur handshake: ${err.message}`);
             }
         };
 
         ws.onmessage = (ev) => {
-            let msg;
             try {
-                msg = JSON.parse(ev.data);
+                const msg = JSON.parse(ev.data);
+                logRpc("in", inst.kind, msg);
+                handleIncomingWsMessage(inst, msg);
             } catch {
-                logRpc("in", inst.name, ev.data);
-                return;
+                // ignore
             }
-            logRpc("in", inst.name, msg);
-            handleActiveWsFrame(inst, msg);
         };
 
         ws.onclose = () => {
             state.connected = false;
-            state.turnRunning = false;
             updateConsoleBadges();
+            appendMsg("console-messages", "system", inst.name, "WebSocket connection closed.");
+        };
+
+        ws.onerror = (err) => {
+            appendMsg("console-messages", "system", "Error", `WebSocket error: ${err.message || "Failed"}`);
         };
     }
 
-    function handleActiveWsFrame(inst, msg) {
-        if (msg.id !== undefined && (msg.result !== undefined || msg.error !== undefined)) {
-            const pending = state.pendingRequests.get(msg.id);
-            if (pending) {
-                state.pendingRequests.delete(msg.id);
-                if (msg.error) pending.reject(new Error(msg.error.message || JSON.stringify(msg.error)));
-                else pending.resolve(msg.result);
-            }
-            return;
-        }
-
-        if (msg.id !== undefined && msg.method) {
-            state.pendingApproval = { inst, msg };
-            $("console-approval-details").textContent = `${msg.method}\n${JSON.stringify(msg.params, null, 2)}`;
-            $("console-approval-banner").classList.remove("hidden");
+    function handleIncomingWsMessage(inst, msg) {
+        if (msg.id && state.pendingRequests.has(msg.id)) {
+            const { resolve, reject } = state.pendingRequests.get(msg.id);
+            state.pendingRequests.delete(msg.id);
+            if (msg.error) reject(new Error(msg.error.message || JSON.stringify(msg.error)));
+            else resolve(msg.result);
             return;
         }
 
         const method = msg.method || "";
-        const params = msg.params || {};
 
-        if (method === "turn/started") {
-            state.turnRunning = true;
-            state.streamingEl = null;
-            updateConsoleBadges();
-        } else if (method === "turn/completed") {
-            state.turnRunning = false;
-            state.streamingEl = null;
-            updateConsoleBadges();
-        } else if (method === "item/agentMessage/delta") {
+        if (method === "item/agentMessage/delta") {
+            const delta = msg.params?.delta || "";
             if (!state.streamingEl) {
-                state.streamingEl = appendMsg("console-messages", "agent", inst.name, "");
+                state.streamingEl = appendMsg("console-messages", "agent", `${inst.name} [${inst.role || inst.kind}]`, "");
             }
-            state.streamingEl.textContent += params.delta || "";
-            $("console-messages").scrollTop = $("console-messages").scrollHeight;
-        } else if (method === "session/update") {
-            const upd = params.update || {};
-            if (upd.sessionUpdate === "agent_message_chunk") {
+            if (state.streamingEl) {
+                state.streamingEl.textContent += delta;
+                const c = $("console-messages");
+                c.scrollTop = c.scrollHeight;
+            }
+            return;
+        }
+
+        if (method === "session/update") {
+            const upd = msg.params?.update;
+            if (upd?.sessionUpdate === "agent_message_chunk") {
+                const chunk = upd.content?.text || "";
                 if (!state.streamingEl) {
-                    state.streamingEl = appendMsg("console-messages", "agent", inst.name, "");
+                    state.streamingEl = appendMsg("console-messages", "agent", `${inst.name} [${inst.role || inst.kind}]`, "");
                 }
-                state.streamingEl.textContent += upd.content?.text || "";
-                $("console-messages").scrollTop = $("console-messages").scrollHeight;
+                if (state.streamingEl) {
+                    state.streamingEl.textContent += chunk;
+                    const c = $("console-messages");
+                    c.scrollTop = c.scrollHeight;
+                }
             }
-        } else if (method === "bridge/error") {
-            appendMsg("console-messages", "system", inst.name, params.message || "Erreur pont");
+            return;
+        }
+
+        if (method === "turn/completed") {
+            state.streamingEl = null;
+            state.turnRunning = false;
+            updateConsoleBadges();
+            return;
+        }
+
+        if (method === "item/commandExecution/requestApproval" || method === "session/request_permission") {
+            state.pendingApproval = { inst, msg };
+            $("console-approval-details").textContent = JSON.stringify(msg.params, null, 2);
+            $("console-approval-banner").classList.remove("hidden");
         }
     }
 
     async function createNewSessionOnActiveCli() {
         const inst = getActiveInstance();
         if (!inst) return null;
-        if (!state.sessionsByInstance[inst.id]) state.sessionsByInstance[inst.id] = [];
 
-        if (inst.kind === "codex" && state.connected && state.ws) {
+        if (inst.kind === "codex") {
             const res = await sendActiveWsRpc("thread/start", { cwd: inst.default_cwd });
-            const id = res?.thread?.id || res?.threadId || res?.id;
-            if (id) {
-                state.activeSessionId = id;
-                state.sessionsByInstance[inst.id].unshift({ id, preview: `Thread (${inst.default_cwd})` });
-                renderSessionsList();
-                updateConsoleBadges();
-            }
-            return id;
-        } else if (inst.kind === "goose" && state.connected && state.ws) {
-            const res = await sendActiveWsRpc("session/new", { cwd: inst.default_cwd, mcpServers: [] });
-            const id = res?.sessionId || res?.id;
-            if (id) {
-                state.activeSessionId = id;
-                state.sessionsByInstance[inst.id].unshift({ id, preview: `Session ACP (${inst.default_cwd})` });
-                renderSessionsList();
-                updateConsoleBadges();
-            }
-            return id;
+            const threadId = res?.thread?.id || res?.threadId || `thread-${Date.now()}`;
+            state.activeSessionId = threadId;
+            const list = state.sessionsByInstance[inst.id] || [];
+            list.unshift({ id: threadId, title: `Thread ${list.length + 1}` });
+            state.sessionsByInstance[inst.id] = list;
+            updateConsoleBadges();
+            renderSessionsList();
+            return threadId;
         }
-        return null;
+
+        if (inst.kind === "goose") {
+            const res = await sendActiveWsRpc("session/new", { cwd: inst.default_cwd, mcpServers: [] });
+            const sid = res?.sessionId || `session-${Date.now()}`;
+            state.activeSessionId = sid;
+            const list = state.sessionsByInstance[inst.id] || [];
+            list.unshift({ id: sid, title: `Session ${list.length + 1}` });
+            state.sessionsByInstance[inst.id] = list;
+            updateConsoleBadges();
+            renderSessionsList();
+            return sid;
+        }
+
+        const sid = `sess-${Date.now()}`;
+        state.activeSessionId = sid;
+        const list = state.sessionsByInstance[inst.id] || [];
+        list.unshift({ id: sid, title: `Session ${list.length + 1}` });
+        state.sessionsByInstance[inst.id] = list;
+        updateConsoleBadges();
+        renderSessionsList();
+        return sid;
     }
 
     $("btn-cli-connect").addEventListener("click", connectActiveCli);
     $("btn-cli-new-session").addEventListener("click", createNewSessionOnActiveCli);
 
-    $("btn-cli-native-web").addEventListener("click", () => {
-        const inst = getActiveInstance();
-        if (!inst) return;
-        const proxyUrl = `/api/instances/${encodeURIComponent(inst.id)}/web`;
-        const container = $("console-messages");
-        const wrapper = document.createElement("div");
-        wrapper.className = "msg msg-agent";
-        wrapper.style.width = "100%";
-        wrapper.style.maxWidth = "100%";
-        wrapper.innerHTML = `
-            <div class="msg-header">
-                <span>🌐 Serveur Web natif de ${escapeHtml(inst.name)}</span>
-                <a href="${escapeHtml(proxyUrl)}" target="_blank" rel="noopener" style="color:var(--highlight);">↗ Ouvrir dans un nouvel onglet</a>
-            </div>
-            <iframe src="${escapeHtml(proxyUrl)}" style="width:100%;height:420px;border:1px solid var(--border);border-radius:var(--radius);background:#111315;"></iframe>
-        `;
-        container.appendChild(wrapper);
-        container.scrollTop = container.scrollHeight;
-    });
-
     $("console-prompt-form").addEventListener("submit", async (e) => {
         e.preventDefault();
-        const text = $("console-prompt-input").value.trim();
-        if (!text) return;
-        $("console-prompt-input").value = "";
-
         const inst = getActiveInstance();
         if (!inst) return;
-        appendMsg("console-messages", "user", "Vous", text);
+        const input = $("console-prompt-input");
+        const text = input.value.trim();
+        if (!text) return;
+        input.value = "";
+
+        appendMsg("console-messages", "user", "You", text);
 
         if (inst.kind === "codex" && state.connected && state.ws?.readyState === WebSocket.OPEN) {
             let tid = state.activeSessionId;
@@ -939,7 +1243,7 @@
             if (data.error) throw new Error(data.error);
             appendMsg("console-messages", "agent", `${inst.name} [${inst.role || inst.kind}]`, data.reply || "");
         } catch (err) {
-            appendMsg("console-messages", "system", `Erreur (${inst.name})`, err.message);
+            appendMsg("console-messages", "system", `Error (${inst.name})`, err.message);
         } finally {
             state.turnRunning = false;
             updateConsoleBadges();
@@ -1014,11 +1318,12 @@
 
     function renderChannelSelector() {
         const sel = $("channel-selector");
+        if (!sel) return;
         sel.innerHTML = "";
         state.channels.forEach((ch) => {
             const opt = document.createElement("option");
             opt.value = ch.id;
-            opt.textContent = `#${ch.name} — ${ch.description || "Canal d'orchestration"}`;
+            opt.textContent = `#${ch.name} — ${ch.description || "Orchestration channel"}`;
             if (ch.id === state.activeChannelId) opt.selected = true;
             sel.appendChild(opt);
         });
@@ -1036,7 +1341,7 @@
         if (!container || !recipientSel) return;
 
         container.innerHTML = "";
-        recipientSel.innerHTML = `<option value="@all">@all (Tous les participants du canal)</option>`;
+        recipientSel.innerHTML = `<option value="@all">@all (All channel participants)</option>`;
 
         const ch = getActiveChannel();
         let selectedIds = [];
@@ -1102,6 +1407,8 @@
 
     $("btn-delete-channel").addEventListener("click", async () => {
         if (!state.activeChannelId) return;
+        const ch = getActiveChannel();
+        if (!confirm(`Delete channel "${ch ? ch.name : ""}"?`)) return;
         await fetch(`/api/orchestration/channels/${state.activeChannelId}`, { method: "DELETE" });
         state.activeChannelId = null;
         await loadChannels();
@@ -1119,7 +1426,7 @@
             body: JSON.stringify({ participant_ids: checked }),
         });
         await loadChannels();
-        appendMsg("channel-messages", "system", "Orchestrateur", "Participants du canal mis à jour en base SeaORM.");
+        appendMsg("channel-messages", "system", "Orchestrator", t("participantsUpdated"));
     });
 
     async function loadChannelHistory(channelId) {
@@ -1135,7 +1442,8 @@
     function renderChannelMessageObj(m) {
         if (!m || !m.id || state.seenMessageIds.has(m.id)) return;
         state.seenMessageIds.add(m.id);
-        const role = m.sender_name === "Utilisateur" ? "user" : "agent";
+        const isUser = m.sender_name === "User" || m.sender_name === "Utilisateur";
+        const role = isUser ? "user" : "agent";
         const label = `${m.sender_name} → ${m.recipient_name || "@all"}`;
         appendMsg("channel-messages", role, label, m.content);
     }
@@ -1157,19 +1465,19 @@
         };
     }
 
-    $("channel-publish-form").addEventListener("submit", async (e) => {
-        e.preventDefault();
+    window.publishOrchestrationMessage = async function () {
         if (!state.activeChannelId) return;
-        const content = $("channel-message-input").value.trim();
+        const input = $("channel-message-input");
+        const content = input.value.trim();
         if (!content) return;
-        $("channel-message-input").value = "";
+        input.value = "";
 
         const recipient = $("channel-recipient-select").value || "@all";
         const resp = await fetch(`/api/orchestration/channels/${state.activeChannelId}/publish`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                sender_name: "Utilisateur",
+                sender_name: "User",
                 recipient_name: recipient,
                 content,
                 auto_dispatch: true,
@@ -1180,6 +1488,11 @@
         if (Array.isArray(data.replies)) {
             data.replies.forEach(renderChannelMessageObj);
         }
+    };
+
+    $("channel-publish-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        await window.publishOrchestrationMessage();
     });
 
     $("btn-refresh-channel-msgs").addEventListener("click", () => {
@@ -1203,8 +1516,8 @@
         appendMsg(
             "channel-messages",
             "system",
-            "Rétention SeaORM",
-            `Politique appliquée (${retention_days}j / max ${max_messages} messages). Messages purgés: ${pruneData.pruned_messages ?? 0}.`
+            "SeaORM Retention",
+            t("retentionApplied", retention_days, max_messages, pruneData.pruned ?? 0)
         );
     });
 
@@ -1220,7 +1533,7 @@
         const viewer = $("git-diff-viewer");
         if (!viewer) return;
         if (!diffText || !diffText.trim()) {
-            viewer.innerHTML = `<span class="field-hint">Aucune modification non commitée dans ce dépôt.</span>`;
+            viewer.innerHTML = `<span class="field-hint">${t("noDiffDetected")}</span>`;
             return;
         }
         const lines = diffText.split("\n");
@@ -1253,7 +1566,7 @@
             const filesList = $("git-files-list");
             filesList.innerHTML = "";
             if (!data.files || data.files.length === 0) {
-                filesList.innerHTML = `<div class="field-hint">Arbre de travail propre (0 fichier modifié)</div>`;
+                filesList.innerHTML = `<div class="field-hint">${t("cleanWorkingTree")}</div>`;
             } else {
                 data.files.forEach((f) => {
                     const row = document.createElement("div");
@@ -1288,7 +1601,7 @@
 
             renderHighlightedDiff(data.diff || "");
         } catch (err) {
-            $("git-diff-viewer").textContent = `Erreur Git: ${err.message}`;
+            $("git-diff-viewer").textContent = `Git error: ${err.message}`;
         }
     }
 
@@ -1310,6 +1623,7 @@
     });
 
     $("btn-git-revert-all")?.addEventListener("click", async () => {
+        if (!confirm("Revert all modifications across the entire workspace (git checkout -- .)?")) return;
         const cwd = $("git-cwd-input").value.trim() || "/srv";
         await fetch("/api/git/revert", {
             method: "POST",
@@ -1327,7 +1641,28 @@
 
     $("btn-clear-rpc").addEventListener("click", () => ($("rpc-log").innerHTML = ""));
 
+    window.setAppLanguage = function (lang) {
+        currentLang = lang === "fr" ? "fr" : "en";
+        localStorage.setItem("agent_hub_lang", currentLang);
+        document.documentElement.lang = currentLang;
+
+        $("lang-btn-en")?.classList.toggle("active", currentLang === "en");
+        $("lang-btn-fr")?.classList.toggle("active", currentLang === "fr");
+
+        document.querySelectorAll("[data-i18n]").forEach((el) => {
+            const k = el.getAttribute("data-i18n");
+            if (k) el.textContent = t(k);
+        });
+
+        loadRolePresets();
+        renderCliSelector();
+        renderInventoryTable();
+    };
+
+    window.state = state;
+
     // Init
+    window.setAppLanguage(currentLang);
     loadRolePresets()
         .then(loadInstances)
         .then(loadChannels);

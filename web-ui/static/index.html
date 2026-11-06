@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="en">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Simply Agent Hub — Gestionnaire multi-instances CLI, rôles d'orchestration, terminal natif et Git Diff SeaORM.">
+    <meta name="description" content="Simply Agent Hub — Multi-instance CLI Manager, Orchestration Roles, Native Interactive Terminal & SeaORM Git Viewer.">
     <title>Simply Agent Hub</title>
     <link rel="stylesheet" href="/style.css">
 </head>
@@ -18,78 +18,82 @@
                     <h1>Simply Agent Hub</h1>
                 </div>
                 <div class="header-actions">
-                    <span id="header-instances-count" class="badge badge-tier">0 CLIs enregistrés</span>
-                    <span id="header-active-cli-badge" class="badge badge-online">Aucun CLI sélectionné</span>
-                    <button id="btn-refresh-all" class="btn btn-secondary btn-sm">↻ Actualiser l'état</button>
+                    <div class="lang-selector">
+                        <button id="lang-btn-en" class="btn-lang active" onclick="setAppLanguage('en')">EN</button>
+                        <button id="lang-btn-fr" class="btn-lang" onclick="setAppLanguage('fr')">FR</button>
+                    </div>
+                    <span id="header-instances-count" class="badge badge-tier">0 CLIs registered</span>
+                    <span id="header-active-cli-badge" class="badge badge-online">No CLI selected</span>
+                    <button id="btn-refresh-all" class="btn btn-secondary btn-sm" data-i18n="btnRefreshAll">↻ Refresh Status</button>
                 </div>
             </header>
 
             <!-- Tab Navigation -->
             <nav class="tab-nav" role="tablist">
-                <button class="tab-btn active" data-tab="console" role="tab" aria-selected="true">Console CLI, Rôles &amp; Terminal Natif</button>
-                <button class="tab-btn" data-tab="orchestration" role="tab" aria-selected="false">Canaux d'Orchestration Multi-CLIs</button>
-                <button class="tab-btn" data-tab="git" role="tab" aria-selected="false">🔀 Git Diff &amp; Commit</button>
-                <button class="tab-btn" data-tab="inventory" role="tab" aria-selected="false">Parc de Conteneurs (SeaORM)</button>
-                <button class="tab-btn" data-tab="rpc" role="tab" aria-selected="false">Inspecteur JSON-RPC</button>
+                <button class="tab-btn active" data-tab="console" role="tab" aria-selected="true" data-i18n="tabConsole">CLI Console, Roles &amp; Native Terminal</button>
+                <button class="tab-btn" data-tab="orchestration" role="tab" aria-selected="false" data-i18n="tabOrchestration">Multi-CLI Orchestration Channels</button>
+                <button class="tab-btn" data-tab="git" role="tab" aria-selected="false" data-i18n="tabGit">🔀 Git Diff &amp; Commit</button>
+                <button class="tab-btn" data-tab="inventory" role="tab" aria-selected="false" data-i18n="tabInventory">Container Fleet (SeaORM)</button>
+                <button class="tab-btn" data-tab="rpc" role="tab" aria-selected="false" data-i18n="tabRpc">JSON-RPC Inspector</button>
             </nav>
         </div>
 
         <!-- ═════════════════════════════════════════════════════════════════ -->
-        <!-- TAB 1: CONSOLE CLI UNIFIÉE, RÔLES, TERMINAL NATIF & AUTH WEB      -->
+        <!-- TAB 1: UNIFIED CLI CONSOLE, ROLES, NATIVE TERMINAL & WEB AUTH     -->
         <!-- ═════════════════════════════════════════════════════════════════ -->
         <main id="tab-console" class="tab-panel active">
             <div class="workspace-grid">
                 <!-- Left Sidebar: Dropdown CLI Selector, Role Selector, Rename, Add, Web Auth -->
                 <aside class="card">
-                    <h2>Sélection du Conteneur CLI</h2>
-                    <p class="subtitle">Choisissez, renommez, attribuez un rôle ou authentifiez n'importe laquelle de vos instances.</p>
+                    <h2 data-i18n="cliSelectorTitle">CLI Container Selection</h2>
+                    <p class="subtitle" data-i18n="cliSelectorSubtitle">Select, rename, assign a role, or authenticate any of your CLI instances.</p>
 
                     <div class="form-group">
-                        <label for="cli-selector">Instance CLI active</label>
+                        <label for="cli-selector" data-i18n="activeCliLabel">Active CLI Instance</label>
                         <select id="cli-selector" class="input-field"></select>
                     </div>
 
                     <div class="btn-row" style="margin-bottom: 1rem;">
-                        <button id="btn-open-add-cli" class="btn btn-primary btn-sm">+ Ajouter un CLI</button>
-                        <button id="btn-open-rename-cli" class="btn btn-secondary btn-sm">✎ Renommer / Éditer</button>
-                        <button id="btn-open-auth-cli" class="btn btn-secondary btn-sm">🔑 Authentifier</button>
-                        <button id="btn-delete-cli" class="btn btn-danger btn-sm">🗑</button>
+                        <button id="btn-open-add-cli" class="btn btn-primary btn-sm" data-i18n="btnAddCli">+ Add CLI</button>
+                        <button id="btn-open-rename-cli" class="btn btn-secondary btn-sm" data-i18n="btnEditCli">✎ Rename / Edit</button>
+                        <button id="btn-open-auth-cli" class="btn btn-secondary btn-sm" data-i18n="btnAuthCli">🔑 Authenticate</button>
+                        <button id="btn-delete-cli" class="btn btn-danger btn-sm" title="Delete instance">🗑</button>
                     </div>
 
                     <!-- Agent Role Dropdown & Customizable Role Prompt -->
                     <div class="subcard" style="margin-bottom: 1rem;">
-                        <h3>🎭 Rôle &amp; Mission de l'Agent</h3>
+                        <h3 data-i18n="agentRoleTitle">🎭 Agent Role &amp; Mission</h3>
                         <div class="form-group">
-                            <label for="cli-role-selector">Rôle dans le collectif</label>
+                            <label for="cli-role-selector" data-i18n="roleInCollectiveLabel">Role in collective</label>
                             <select id="cli-role-selector" class="input-field">
-                                <option value="architect">🏗️ Architecte Logiciel</option>
-                                <option value="developer">💻 Développeur Principal</option>
-                                <option value="reviewer">🔍 Code Reviewer &amp; Qualité</option>
-                                <option value="tester">🧪 Ingénieur QA &amp; Tests E2E</option>
-                                <option value="security">🛡️ Auditeur Sécurité &amp; DevSecOps</option>
-                                <option value="general">🤖 Agent Polyvalent</option>
+                                <option value="architect">🏗️ Software Architect</option>
+                                <option value="developer">💻 Lead Developer</option>
+                                <option value="reviewer">🔍 Code Reviewer &amp; QA</option>
+                                <option value="tester">🧪 QA &amp; E2E Test Engineer</option>
+                                <option value="security">🛡️ Security &amp; DevSecOps Auditor</option>
+                                <option value="general">🤖 Versatile Agent</option>
                             </select>
                         </div>
                         <div class="form-group">
-                            <label for="cli-role-prompt">Prompt de rôle (par défaut proposé / paramétrable)</label>
-                            <textarea id="cli-role-prompt" class="input-field" style="min-height:74px;font-size:0.8rem;" placeholder="Instructions décrivant qui est l'agent et comment fonctionne l'orchestration..."></textarea>
+                            <label for="cli-role-prompt" data-i18n="rolePromptLabel">Role Prompt (suggested default / customizable)</label>
+                            <textarea id="cli-role-prompt" class="input-field" style="min-height:74px;font-size:0.8rem;" placeholder="Instructions defining the agent's identity and collaboration guidelines..."></textarea>
                         </div>
                         <div class="btn-row">
-                            <button id="btn-save-role" class="btn btn-secondary btn-sm">💾 Sauver le rôle</button>
-                            <button id="btn-onboard-cli" class="btn btn-primary btn-sm" title="Envoie immédiatement ce prompt au CLI pour lui expliquer qui il est et son rôle">🎭 Initialiser l'agent</button>
+                            <button id="btn-save-role" class="btn btn-secondary btn-sm" data-i18n="btnSaveRole">💾 Save Role</button>
+                            <button id="btn-onboard-cli" class="btn btn-primary btn-sm" title="Immediately send this identity prompt to the CLI" data-i18n="btnOnboardCli">🎭 Initialize Agent</button>
                         </div>
                     </div>
 
                     <!-- Collapsible Add / Edit CLI Form (Saved in SeaORM DB) -->
                     <div id="cli-form-box" class="subcard hidden">
-                        <h3 id="cli-form-title">Ajouter un conteneur CLI</h3>
+                        <h3 id="cli-form-title" data-i18n="addCliFormTitle">Add CLI Container</h3>
                         <input type="hidden" id="cli-form-id">
                         <div class="form-group">
-                            <label for="cli-form-name">Nom personnalisé</label>
-                            <input id="cli-form-name" type="text" class="input-field" placeholder="ex: Codex #2 - Media Vidéo">
+                            <label for="cli-form-name" data-i18n="customNameLabel">Custom Name</label>
+                            <input id="cli-form-name" type="text" class="input-field" placeholder="e.g. Codex #2 - Media Video">
                         </div>
                         <div class="form-group">
-                            <label for="cli-form-kind">Type d'agent CLI</label>
+                            <label for="cli-form-kind" data-i18n="cliAgentTypeLabel">CLI Agent Kind</label>
                             <select id="cli-form-kind" class="input-field">
                                 <option value="codex">Codex CLI (app-server)</option>
                                 <option value="antigravity">Antigravity CLI (agy)</option>
@@ -98,70 +102,70 @@
                             </select>
                         </div>
                         <div class="form-group">
-                            <label for="cli-form-role">Rôle par défaut</label>
+                            <label for="cli-form-role" data-i18n="defaultRoleLabel">Default Role</label>
                             <select id="cli-form-role" class="input-field">
-                                <option value="developer">💻 Développeur Principal</option>
-                                <option value="architect">🏗️ Architecte Logiciel</option>
-                                <option value="reviewer">🔍 Code Reviewer &amp; Qualité</option>
-                                <option value="tester">🧪 Ingénieur QA &amp; Tests E2E</option>
-                                <option value="security">🛡️ Auditeur Sécurité &amp; DevSecOps</option>
-                                <option value="general">🤖 Agent Polyvalent</option>
+                                <option value="developer">💻 Lead Developer</option>
+                                <option value="architect">🏗️ Software Architect</option>
+                                <option value="reviewer">🔍 Code Reviewer &amp; QA</option>
+                                <option value="tester">🧪 QA &amp; E2E Test Engineer</option>
+                                <option value="security">🛡️ Security &amp; DevSecOps Auditor</option>
+                                <option value="general">🤖 Versatile Agent</option>
                             </select>
                         </div>
                         <div class="form-group">
                             <label for="cli-form-transport">Transport</label>
                             <select id="cli-form-transport" class="input-field">
                                 <option value="ws">WebSocket (ws://...)</option>
-                                <option value="unix">Socket Unix (/run/...)</option>
-                                <option value="rpc">Pont HTTP JSON-RPC (http://.../rpc)</option>
+                                <option value="unix">Unix Socket (/run/...)</option>
+                                <option value="rpc">HTTP JSON-RPC Bridge (http://.../rpc)</option>
                                 <option value="http">HTTP ACP (http://.../acp)</option>
                             </select>
                         </div>
                         <div class="form-group">
                             <label for="cli-form-endpoint">URL / Socket Endpoint</label>
-                            <input id="cli-form-endpoint" type="text" class="input-field mono" placeholder="ws://codex-2:4500 ou http://antigravity-2:3286/rpc">
+                            <input id="cli-form-endpoint" type="text" class="input-field mono" placeholder="ws://codex-2:4500 or http://antigravity-2:3286/rpc">
                         </div>
                         <div class="form-group">
-                            <label for="cli-form-bridge">URL du Pont d'Auth/Tmux (optionnel)</label>
+                            <label for="cli-form-bridge" data-i18n="bridgeUrlLabel">Auth/Tmux Bridge URL (optional)</label>
                             <input id="cli-form-bridge" type="text" class="input-field mono" placeholder="http://codex-2:3287/rpc">
                         </div>
                         <div class="form-group">
-                            <label for="cli-form-secret">Secret / Token (optionnel)</label>
+                            <label for="cli-form-secret" data-i18n="secretTokenLabel">Secret / Token (optional)</label>
                             <input id="cli-form-secret" type="password" class="input-field mono" placeholder="GOOSE_SERVER__SECRET_KEY / Secret">
                         </div>
                         <div class="form-group">
-                            <label for="cli-form-cwd">Répertoire de travail (cwd)</label>
+                            <label for="cli-form-cwd" data-i18n="workingDirLabel">Working Directory (cwd)</label>
                             <input id="cli-form-cwd" type="text" class="input-field mono" value="/srv">
                         </div>
                         <div class="btn-row">
-                            <button id="btn-save-cli" class="btn btn-primary btn-sm">Enregistrer en base</button>
-                            <button id="btn-cancel-cli" class="btn btn-cancel btn-sm">Annuler</button>
+                            <button id="btn-save-cli" class="btn btn-primary btn-sm" data-i18n="btnSaveDatabase">Save to Database</button>
+                            <button id="btn-cancel-cli" class="btn btn-cancel btn-sm" data-i18n="btnCancel">Cancel</button>
                         </div>
                     </div>
 
                     <!-- Collapsible Web Authentication Panel -->
                     <div id="cli-auth-box" class="subcard hidden">
-                        <h3>Authentification Web du Conteneur</h3>
-                        <p class="field-hint" style="margin-bottom:0.6rem;">Authentifiez le conteneur sélectionné sans quitter cette interface.</p>
+                        <h3 data-i18n="authPanelTitle">Container Web Authentication</h3>
+                        <p class="field-hint" style="margin-bottom:0.6rem;" data-i18n="authPanelSubtitle">Authenticate the selected container without leaving this dashboard.</p>
                         <div class="btn-row" style="margin-bottom:0.75rem;">
-                            <button id="btn-auth-status" class="btn btn-secondary btn-sm">Vérifier statut</button>
-                            <button id="btn-auth-device" class="btn btn-primary btn-sm">Obtenir Code Device / Lien OAuth</button>
+                            <button id="btn-auth-status" class="btn btn-secondary btn-sm" data-i18n="btnCheckStatus">Check Status</button>
+                            <button id="btn-auth-device" class="btn btn-primary btn-sm" data-i18n="btnGetDeviceCode">Get Device Code / OAuth Link</button>
                         </div>
                         <div id="auth-result-box" class="auth-result-box hidden"></div>
 
                         <div class="form-group" style="margin-top:0.75rem;">
-                            <label for="auth-apikey-input">Ou injecter une clé API (OpenAI / Gemini / Anthropic)</label>
+                            <label for="auth-apikey-input" data-i18n="apiKeyInjectLabel">Or inject an API key (OpenAI / Gemini / Anthropic)</label>
                             <div class="btn-row">
                                 <input id="auth-apikey-input" type="password" class="input-field mono" placeholder="sk-... / AIza...">
-                                <button id="btn-auth-apikey" class="btn btn-secondary btn-sm">Appliquer la clé</button>
+                                <button id="btn-auth-apikey" class="btn btn-secondary btn-sm" data-i18n="btnApplyKey">Apply Key</button>
                             </div>
                         </div>
 
                         <div class="form-group">
-                            <label for="auth-callback-input">Ou valider une URL Callback OAuth (http://localhost:...)</label>
+                            <label for="auth-callback-input" data-i18n="oauthCallbackLabel">Or validate OAuth Callback URL (http://localhost:...)</label>
                             <div class="btn-row">
                                 <input id="auth-callback-input" type="text" class="input-field mono" placeholder="http://localhost:.../oauth-callback?code=...">
-                                <button id="btn-auth-callback" class="btn btn-secondary btn-sm">Valider OAuth</button>
+                                <button id="btn-auth-callback" class="btn btn-secondary btn-sm" data-i18n="btnValidateOauth">Validate OAuth</button>
                             </div>
                         </div>
                     </div>
@@ -170,15 +174,15 @@
 
                     <!-- Connection & Session Controls for Selected Instance -->
                     <div class="btn-row">
-                        <button id="btn-cli-connect" class="btn btn-primary">Connecter au CLI</button>
-                        <button id="btn-cli-new-session" class="btn btn-secondary">+ Session / Thread</button>
-                        <button id="btn-cli-tmux" class="btn btn-secondary btn-sm">🖥 Terminal Natif (Tmux/WS)</button>
-                        <button id="btn-cli-native-web" class="btn btn-secondary btn-sm" title="Ouvrir ou intégrer le serveur Web natif lancé par le CLI (ex: Antigravity :4400)">🌐 Serveur Web du CLI</button>
+                        <button id="btn-cli-connect" class="btn btn-primary" data-i18n="btnConnectCli">Connect to CLI</button>
+                        <button id="btn-cli-new-session" class="btn btn-secondary" data-i18n="btnNewSession">+ Session / Thread</button>
+                        <button id="btn-cli-tmux" class="btn btn-secondary btn-sm" data-i18n="btnNativeTerminal">🖥 Native Terminal (Tmux/WS)</button>
+                        <button id="btn-cli-native-web" class="btn btn-secondary btn-sm" title="Open or proxy the native web server spawned by the CLI" data-i18n="btnCliWebServer">🌐 CLI Web Server</button>
                     </div>
 
-                    <h2 style="margin-top:1rem;">Sessions / Threads</h2>
+                    <h2 style="margin-top:1rem;" data-i18n="sessionsThreadsTitle">Sessions / Threads</h2>
                     <div id="cli-sessions-list" class="session-list">
-                        <div class="field-hint">Sélectionnez et connectez un CLI</div>
+                        <div class="field-hint" data-i18n="selectConnectHint">Select and connect a CLI instance</div>
                     </div>
                 </aside>
 
@@ -186,14 +190,14 @@
                 <section class="card chat-card">
                     <div class="chat-header">
                         <div>
-                            <span id="console-conn-badge" class="badge">Prêt</span>
+                            <span id="console-conn-badge" class="badge">Ready</span>
                             <span id="console-instance-badge" class="badge badge-tier">-</span>
                             <span id="console-role-badge" class="badge badge-online">-</span>
                             <span id="console-session-badge" class="badge">-</span>
                         </div>
                         <div class="btn-row" style="margin-top:0;">
-                            <button id="btn-console-interrupt" class="btn btn-danger btn-sm hidden">⏹ Interrompre</button>
-                            <button id="btn-console-clear" class="btn btn-secondary btn-sm">Effacer</button>
+                            <button id="btn-console-interrupt" class="btn btn-danger btn-sm hidden" data-i18n="btnInterrupt">⏹ Interrupt</button>
+                            <button id="btn-console-clear" class="btn btn-secondary btn-sm" data-i18n="btnClear">Clear</button>
                         </div>
                     </div>
 
@@ -201,20 +205,20 @@
                     <div id="native-terminal-drawer" class="native-terminal-drawer hidden">
                         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;">
                             <div>
-                                <strong style="color:var(--accent);font-size:0.88rem;">🖥 Terminal Natif Interactif (Tmux Direct WebSocket)</strong>
-                                <span id="terminal-ws-status" class="badge badge-online" style="margin-left:0.5rem;">Connecté</span>
+                                <strong style="color:var(--accent);font-size:0.88rem;" data-i18n="termDrawerTitle">🖥 Interactive Native Terminal (Direct Tmux WebSocket)</strong>
+                                <span id="terminal-ws-status" class="badge badge-online" style="margin-left:0.5rem;">Connected</span>
                             </div>
                             <div class="btn-row" style="margin-top:0;">
-                                <button id="btn-term-ctrlc" class="btn btn-danger btn-sm" title="Envoyer Ctrl+C">Ctrl+C</button>
-                                <button id="btn-term-enter" class="btn btn-secondary btn-sm" title="Envoyer Entrée">↵ Enter</button>
+                                <button id="btn-term-ctrlc" class="btn btn-danger btn-sm" title="Send Ctrl+C">Ctrl+C</button>
+                                <button id="btn-term-enter" class="btn btn-secondary btn-sm" title="Send Enter">↵ Enter</button>
                                 <button id="btn-term-refresh" class="btn btn-secondary btn-sm">↻ Sync</button>
-                                <button id="btn-term-close" class="btn btn-cancel btn-sm">✕ Fermer</button>
+                                <button id="btn-term-close" class="btn btn-cancel btn-sm" data-i18n="btnClose">✕ Close</button>
                             </div>
                         </div>
-                        <div id="terminal-viewport" class="terminal-viewport" tabindex="0" title="Cliquez ici pour taper directement dans le terminal tmux"></div>
+                        <div id="terminal-viewport" class="terminal-viewport" tabindex="0" title="Click here to type keystrokes directly into tmux"></div>
                         <form id="terminal-input-form" class="btn-row" style="margin-top:0;">
-                            <input id="terminal-cmd-input" type="text" class="input-field mono" style="flex:1;" placeholder="Tapez une commande ou appuyez directement sur les touches dans l'écran noir ci-dessus...">
-                            <button type="submit" class="btn btn-primary btn-sm">Envoyer au PTY ➤</button>
+                            <input id="terminal-cmd-input" type="text" class="input-field mono" style="flex:1;" placeholder="Type a command or click in the terminal above to type directly...">
+                            <button type="submit" class="btn btn-primary btn-sm" data-i18n="btnSendPty">Send to PTY ➤</button>
                         </form>
                     </div>
 
@@ -222,77 +226,77 @@
 
                     <div id="console-approval-banner" class="approval-banner hidden">
                         <div>
-                            <strong>Autorisation d'outil requise par le CLI</strong>
+                            <strong data-i18n="approvalTitle">Tool approval required by CLI</strong>
                             <pre id="console-approval-details"></pre>
                         </div>
                         <div class="btn-row">
-                            <button id="btn-console-approve" class="btn btn-primary btn-sm">Autoriser</button>
-                            <button id="btn-console-decline" class="btn btn-danger btn-sm">Refuser</button>
+                            <button id="btn-console-approve" class="btn btn-primary btn-sm" data-i18n="btnApprove">Approve</button>
+                            <button id="btn-console-decline" class="btn btn-danger btn-sm" data-i18n="btnDecline">Decline</button>
                         </div>
                     </div>
 
                     <form id="console-prompt-form" class="composer-bar">
-                        <textarea id="console-prompt-input" class="input-field" placeholder="Écrivez votre instruction pour le CLI sélectionné..."></textarea>
-                        <button type="submit" class="btn btn-primary">Envoyer ➤</button>
+                        <textarea id="console-prompt-input" class="input-field" placeholder="Type instructions for the selected CLI agent..."></textarea>
+                        <button type="submit" class="btn btn-primary" data-i18n="btnSend">Send ➤</button>
                     </form>
                 </section>
             </div>
         </main>
 
         <!-- ═════════════════════════════════════════════════════════════════ -->
-        <!-- TAB 2: CANAUX D'ORCHESTRATION MULTI-CLIS (/api/orchestration/...) -->
+        <!-- TAB 2: MULTI-CLI ORCHESTRATION CHANNELS (/api/orchestration/...)  -->
         <!-- ═════════════════════════════════════════════════════════════════ -->
         <main id="tab-orchestration" class="tab-panel">
             <div class="workspace-grid">
                 <aside class="card">
-                    <h2>Canaux d'Orchestration</h2>
-                    <p class="subtitle">Créez un canal partagé où plusieurs instances CLI (avec leurs rôles respectifs) échangent des messages en temps réel.</p>
+                    <h2 data-i18n="orchChannelsTitle">Orchestration Channels</h2>
+                    <p class="subtitle" data-i18n="orchChannelsSubtitle">Create a shared channel where multiple CLI instances (with distinct assigned roles) collaborate in real-time.</p>
 
                     <div class="form-group">
-                        <label for="channel-selector">Canal actif</label>
+                        <label for="channel-selector" data-i18n="activeChannelLabel">Active Channel</label>
                         <select id="channel-selector" class="input-field"></select>
                     </div>
 
                     <div class="btn-row" style="margin-bottom:1rem;">
-                        <button id="btn-open-new-channel" class="btn btn-primary btn-sm">+ Nouveau Canal</button>
-                        <button id="btn-delete-channel" class="btn btn-danger btn-sm">🗑 Supprimer</button>
+                        <button id="btn-open-new-channel" class="btn btn-primary btn-sm" data-i18n="btnNewChannel">+ New Channel</button>
+                        <button id="btn-delete-channel" class="btn btn-danger btn-sm" data-i18n="btnDelete">🗑 Delete</button>
                     </div>
 
                     <div id="new-channel-box" class="subcard hidden">
-                        <h3>Créer un canal</h3>
+                        <h3 data-i18n="createChannelTitle">Create Channel</h3>
                         <div class="form-group">
-                            <label for="new-channel-name">Nom du canal</label>
-                            <input id="new-channel-name" type="text" class="input-field" placeholder="ex: refactoring-audio">
+                            <label for="new-channel-name" data-i18n="channelNameLabel">Channel Name</label>
+                            <input id="new-channel-name" type="text" class="input-field" placeholder="e.g. refactoring-audio">
                         </div>
                         <div class="form-group">
-                            <label for="new-channel-desc">Description</label>
-                            <input id="new-channel-desc" type="text" class="input-field" placeholder="Mission commune...">
+                            <label for="new-channel-desc" data-i18n="descriptionLabel">Description</label>
+                            <input id="new-channel-desc" type="text" class="input-field" placeholder="Shared goal...">
                         </div>
                         <div class="btn-row">
-                            <button id="btn-create-channel" class="btn btn-primary btn-sm">Créer</button>
-                            <button id="btn-cancel-channel" class="btn btn-cancel btn-sm">Annuler</button>
+                            <button id="btn-create-channel" class="btn btn-primary btn-sm" data-i18n="btnCreate">Create</button>
+                            <button id="btn-cancel-channel" class="btn btn-cancel btn-sm" data-i18n="btnCancel">Cancel</button>
                         </div>
                     </div>
 
                     <hr style="border:none;border-top:1px solid var(--border);margin:1rem 0;">
-                    <h2>CLIs connectés à ce canal</h2>
-                    <p class="field-hint">Cochez les instances qui participent aux échanges de ce canal :</p>
+                    <h2 data-i18n="clisJoinedChannelTitle">CLIs in this Channel</h2>
+                    <p class="field-hint" data-i18n="clisJoinedChannelHint">Check the instances that participate in this channel's exchanges:</p>
                     <div id="channel-participants-list" class="session-list" style="max-height:190px;"></div>
-                    <button id="btn-save-participants" class="btn btn-secondary btn-sm" style="margin-top:0.65rem;width:100%;">💾 Enregistrer les participants du canal</button>
+                    <button id="btn-save-participants" class="btn btn-secondary btn-sm" style="margin-top:0.65rem;width:100%;" data-i18n="btnSaveParticipants">💾 Save Channel Participants</button>
 
                     <div class="subcard" style="margin-top:1rem;">
-                        <h3>🧹 Rétention Paramétrable (SeaORM)</h3>
+                        <h3 data-i18n="retentionTitle">🧹 Configurable Retention (SeaORM)</h3>
                         <div class="form-group">
-                            <label for="channel-retention-days">Rétention (jours, 0 = illimité)</label>
+                            <label for="channel-retention-days" data-i18n="retentionDaysLabel">Retention (days, 0 = unlimited)</label>
                             <input id="channel-retention-days" type="number" min="0" class="input-field mono" value="30">
                         </div>
                         <div class="form-group">
-                            <label for="channel-max-messages">Nombre max de messages conservés (0 = illimité)</label>
+                            <label for="channel-max-messages" data-i18n="maxMessagesLabel">Max message count (0 = unlimited)</label>
                             <input id="channel-max-messages" type="number" min="0" class="input-field mono" value="200">
                         </div>
                         <div class="btn-row">
-                            <button id="btn-save-retention" class="btn btn-primary btn-sm">💾 Appliquer &amp; Purger</button>
-                            <button id="btn-export-channel-md" class="btn btn-secondary btn-sm">📥 Export .md</button>
+                            <button id="btn-save-retention" class="btn btn-primary btn-sm" data-i18n="btnSaveRetention">💾 Apply &amp; Prune</button>
+                            <button id="btn-export-channel-md" class="btn btn-secondary btn-sm" data-i18n="btnExportMd">📥 Export .md</button>
                         </div>
                     </div>
                 </aside>
@@ -300,11 +304,11 @@
                 <section class="card chat-card">
                     <div class="chat-header">
                         <div>
-                            <span id="channel-ws-badge" class="badge badge-online">Bus WebSocket Actif</span>
+                            <span id="channel-ws-badge" class="badge badge-online">WebSocket Bus Active</span>
                             <span id="channel-title-badge" class="badge badge-tier">#general</span>
                         </div>
                         <div class="btn-row" style="margin-top:0;">
-                            <button id="btn-refresh-channel-msgs" class="btn btn-secondary btn-sm">↻ Historique DB</button>
+                            <button id="btn-refresh-channel-msgs" class="btn btn-secondary btn-sm" data-i18n="btnRefreshHistory">↻ DB History</button>
                         </div>
                     </div>
 
@@ -312,92 +316,92 @@
 
                     <form id="channel-publish-form" class="composer-bar">
                         <select id="channel-recipient-select" class="input-field" style="max-width:210px;">
-                            <option value="@all">@all (Tous les participants)</option>
+                            <option value="@all">@all (All participants)</option>
                         </select>
-                        <textarea id="channel-message-input" class="input-field" placeholder="Message sur le canal d'orchestration (chaque agent répondra selon son rôle attribué)..."></textarea>
-                        <button type="submit" class="btn btn-primary">Diffuser ➤</button>
+                        <textarea id="channel-message-input" class="input-field" placeholder="Message on the orchestration channel (each agent will respond according to their assigned role)..."></textarea>
+                        <button type="submit" class="btn btn-primary" data-i18n="btnBroadcast">Broadcast ➤</button>
                     </form>
                 </section>
             </div>
         </main>
 
         <!-- ═════════════════════════════════════════════════════════════════ -->
-        <!-- TAB 3: VISUALISEUR GIT DIFF, STATUS, COMMIT & REVERT (/api/git/*) -->
+        <!-- TAB 3: GIT DIFF, STATUS, COMMIT & REVERT VIEWER (/api/git/*)      -->
         <!-- ═════════════════════════════════════════════════════════════════ -->
         <main id="tab-git" class="tab-panel">
             <div class="workspace-grid">
                 <aside class="card">
-                    <h2>🔀 État Git du Workspace</h2>
-                    <p class="subtitle">Inspectez les modifications produites par vos agents CLI, annulez un fichier ou créez un commit.</p>
+                    <h2 data-i18n="gitStatusTitle">🔀 Workspace Git Status</h2>
+                    <p class="subtitle" data-i18n="gitStatusSubtitle">Inspect changes produced by your CLI agents, revert a file, or create a commit.</p>
 
                     <div class="form-group">
-                        <label for="git-cwd-input">Répertoire Git (cwd)</label>
+                        <label for="git-cwd-input" data-i18n="gitCwdLabel">Git Directory (cwd)</label>
                         <div class="btn-row" style="margin-top:0;">
                             <input id="git-cwd-input" type="text" class="input-field mono" style="flex:1;" value="/srv">
-                            <button id="btn-git-refresh" class="btn btn-secondary btn-sm">↻ Analyser</button>
+                            <button id="btn-git-refresh" class="btn btn-secondary btn-sm" data-i18n="btnAnalyze">↻ Analyze</button>
                         </div>
                     </div>
 
                     <div style="margin-bottom:0.85rem;">
-                        <span class="field-hint" style="display:inline;">Branche active : </span>
+                        <span class="field-hint" style="display:inline;" data-i18n="activeBranchLabel">Active branch: </span>
                         <span id="git-branch-badge" class="badge badge-tier">-</span>
                     </div>
 
-                    <h2>Fichiers modifiés</h2>
+                    <h2 data-i18n="modifiedFilesTitle">Modified Files</h2>
                     <div id="git-files-list" class="session-list" style="max-height:210px;margin-bottom:1rem;"></div>
 
                     <div class="subcard">
-                        <h3>Créer un Commit</h3>
+                        <h3 data-i18n="createCommitTitle">Create Commit</h3>
                         <div class="form-group">
-                            <label for="git-commit-msg">Message de commit</label>
-                            <input id="git-commit-msg" type="text" class="input-field" placeholder="feat: modifications validées depuis Simply Agent Hub">
+                            <label for="git-commit-msg" data-i18n="commitMsgLabel">Commit Message</label>
+                            <input id="git-commit-msg" type="text" class="input-field" placeholder="feat: validated changes from Simply Agent Hub">
                         </div>
-                        <button id="btn-git-commit" class="btn btn-primary btn-sm" style="width:100%;">✅ Tout indexer (git add -A) &amp; Commit</button>
+                        <button id="btn-git-commit" class="btn btn-primary btn-sm" style="width:100%;" data-i18n="btnGitCommit">✅ Stage All (git add -A) &amp; Commit</button>
                     </div>
 
-                    <h2 style="margin-top:1rem;">Derniers Commits</h2>
+                    <h2 style="margin-top:1rem;" data-i18n="recentCommitsTitle">Recent Commits</h2>
                     <div id="git-recent-commits" class="session-list" style="max-height:150px;font-family:var(--font-mono);font-size:0.76rem;"></div>
                 </aside>
 
                 <section class="card chat-card">
                     <div class="chat-header">
                         <div>
-                            <h2>Diff Unifié (`git diff HEAD`)</h2>
+                            <h2 data-i18n="unifiedDiffTitle">Unified Diff (`git diff HEAD`)</h2>
                         </div>
                         <div class="btn-row" style="margin-top:0;">
-                            <button id="btn-git-revert-all" class="btn btn-danger btn-sm">↩ Revert tout le workspace</button>
+                            <button id="btn-git-revert-all" class="btn btn-danger btn-sm" data-i18n="btnRevertAll">↩ Revert entire workspace</button>
                         </div>
                     </div>
-                    <div id="git-diff-viewer" class="diff-viewer">Aucune modification détectée.</div>
+                    <div id="git-diff-viewer" class="diff-viewer">No changes detected.</div>
                 </section>
             </div>
         </main>
 
         <!-- ═════════════════════════════════════════════════════════════════ -->
-        <!-- TAB 4: PARC DE CONTENEURS (INVENTAIRE SEAORM DB)                  -->
+        <!-- TAB 4: CONTAINER FLEET (SEAORM INVENTORY)                         -->
         <!-- ═════════════════════════════════════════════════════════════════ -->
         <main id="tab-inventory" class="tab-panel">
             <section class="card">
                 <div class="chat-header">
                     <div>
-                        <h2>Parc de Conteneurs CLI enregistrés (SeaORM : SQLite / Postgres / MariaDB)</h2>
-                        <p class="subtitle" style="margin-bottom:0;">Gérez l'ensemble de vos instances Codex, Antigravity, Claude et Goose persistées en base de données.</p>
+                        <h2 data-i18n="inventoryTitle">Registered CLI Container Fleet (SeaORM: SQLite / Postgres / MariaDB)</h2>
+                        <p class="subtitle" style="margin-bottom:0;" data-i18n="inventorySubtitle">Manage all your Codex, Antigravity, Claude, and Goose instances persisted in the database.</p>
                     </div>
-                    <button id="btn-inventory-add" class="btn btn-primary btn-sm">+ Nouveau Conteneur CLI</button>
+                    <button id="btn-inventory-add" class="btn btn-primary btn-sm" data-i18n="btnNewCliContainer">+ New CLI Container</button>
                 </div>
 
                 <div class="table-wrapper">
                     <table class="data-table">
                         <thead>
                             <tr>
-                                <th>Nom de l'instance</th>
-                                <th>Type</th>
-                                <th>Rôle attribué</th>
-                                <th>Transport</th>
-                                <th>Endpoint</th>
+                                <th data-i18n="thInstanceName">Instance Name</th>
+                                <th data-i18n="thType">Type</th>
+                                <th data-i18n="thRole">Assigned Role</th>
+                                <th data-i18n="thTransport">Transport</th>
+                                <th data-i18n="thEndpoint">Endpoint</th>
                                 <th>CWD</th>
-                                <th>État</th>
-                                <th>Actions</th>
+                                <th data-i18n="thStatus">Status</th>
+                                <th data-i18n="thActions">Actions</th>
                             </tr>
                         </thead>
                         <tbody id="inventory-tbody"></tbody>
@@ -407,16 +411,16 @@
         </main>
 
         <!-- ═════════════════════════════════════════════════════════════════ -->
-        <!-- TAB 5: INSPECTEUR JSON-RPC 2.0                                    -->
+        <!-- TAB 5: JSON-RPC 2.0 INSPECTOR                                     -->
         <!-- ═════════════════════════════════════════════════════════════════ -->
         <main id="tab-rpc" class="tab-panel">
             <section class="card chat-card">
                 <div class="chat-header">
                     <div>
-                        <h2>Inspecteur de trames JSON-RPC 2.0 &amp; Bus d'Orchestration</h2>
-                        <p class="subtitle" style="margin-bottom:0;">Journal temps réel des échanges avec les conteneurs CLI.</p>
+                        <h2 data-i18n="rpcTitle">JSON-RPC 2.0 Frame Inspector &amp; Orchestration Bus</h2>
+                        <p class="subtitle" style="margin-bottom:0;" data-i18n="rpcSubtitle">Real-time log of frames exchanged with CLI containers.</p>
                     </div>
-                    <button id="btn-clear-rpc" class="btn btn-secondary btn-sm">Vider le journal</button>
+                    <button id="btn-clear-rpc" class="btn btn-secondary btn-sm" data-i18n="btnClearLog">Clear Log</button>
                 </div>
 
                 <div id="rpc-log" class="messages-stream" style="font-family:var(--font-mono);font-size:0.8rem;"></div>

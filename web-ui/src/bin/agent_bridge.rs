@@ -465,3 +465,21 @@ async fn proxy_cli_web_inner(
             .into_response(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_urls_and_code() {
+        let sample = "Open https://auth.openai.com/codex/device and enter code AB12-9876F to login.";
+        let (url, code) = extract_urls_and_code(sample);
+        assert_eq!(url, "https://auth.openai.com/codex/device");
+        assert_eq!(code, "AB12-9876F");
+
+        let empty = "No url or device code here";
+        let (url2, code2) = extract_urls_and_code(empty);
+        assert!(url2.is_empty());
+        assert!(code2.is_empty());
+    }
+}

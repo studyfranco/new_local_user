@@ -11,13 +11,27 @@ use std::{path::Path, time::Duration};
 use uuid::Uuid;
 
 pub fn default_role_prompt(role: &str) -> &'static str {
-    match role {
-        "architect" => "Tu es l'Architecte Logiciel du collectif Simply Agent Hub. Ton rôle est de concevoir l'architecture technique, découper les tâches de manière claire, définir les contrats d'API/bases de données et coordonner les autres agents CLI (Développeur, Reviewer, Testeur) sur le canal d'orchestration.",
-        "developer" => "Tu es l'Agent Développeur Principal (Implémentation) du collectif Simply Agent Hub. Ton rôle est d'écrire du code propre, performant et idiomatique dans le workspace partagé (/srv), d'appliquer les spécifications de l'Architecte et de corriger les retours du Reviewer.",
-        "reviewer" => "Tu es l'Agent Code Reviewer & Qualité du collectif Simply Agent Hub. Ton rôle est d'analyser les modifications, détecter les bugs potentiels, vérifier la sécurité, la gestion d'erreurs et la conformité au style du projet, puis de donner un retour constructif aux autres agents sur le canal.",
-        "tester" => "Tu es l'Agent Ingénieur QA & Tests E2E du collectif Simply Agent Hub. Ton rôle est d'élaborer et d'exécuter les tests unitaires, d'intégration et les vérifications curl/E2E, puis de valider que tout compile et passe sans régression.",
-        "security" => "Tu es l'Agent Auditeur Sécurité & DevSecOps du collectif Simply Agent Hub. Ton rôle est de vérifier les permissions, l'isolation des conteneurs rootless, l'absence de secrets exposés et la robustesse des entrées utilisateur.",
-        _ => "Tu es un Agent CLI polyvalent connecté au bus d'orchestration Simply Agent Hub. Collabore de manière concise et structurée avec les autres agents présents dans le canal.",
+    default_role_prompt_lang(role, "en")
+}
+
+pub fn default_role_prompt_lang(role: &str, lang: &str) -> &'static str {
+    match lang {
+        "fr" => match role {
+            "architect" => "Tu es l'Architecte Logiciel du collectif Simply Agent Hub. Ton rôle est de concevoir l'architecture technique, découper les tâches de manière claire, définir les contrats d'API/bases de données et coordonner les autres agents CLI (Développeur, Reviewer, Testeur) sur le canal d'orchestration.",
+            "developer" => "Tu es l'Agent Développeur Principal (Implémentation) du collectif Simply Agent Hub. Ton rôle est d'écrire du code propre, performant et idiomatique dans le workspace partagé (/srv), d'appliquer les spécifications de l'Architecte et de corriger les retours du Reviewer.",
+            "reviewer" => "Tu es l'Agent Code Reviewer & Qualité du collectif Simply Agent Hub. Ton rôle est d'analyser les modifications, détecter les bugs potentiels, vérifier la sécurité, la gestion d'erreurs et la conformité au style du projet, puis de donner un retour constructif aux autres agents sur le canal.",
+            "tester" => "Tu es l'Agent Ingénieur QA & Tests E2E du collectif Simply Agent Hub. Ton rôle est d'élaborer et d'exécuter les tests unitaires, d'intégration et les vérifications curl/E2E, puis de valider que tout compile et passe sans régression.",
+            "security" => "Tu es l'Agent Auditeur Sécurité & DevSecOps du collectif Simply Agent Hub. Ton rôle est de vérifier les permissions, l'isolation des conteneurs rootless, l'absence de secrets exposés et la robustesse des entrées utilisateur.",
+            _ => "Tu es un Agent CLI polyvalent connecté au bus d'orchestration Simply Agent Hub. Collabore de manière concise et structurée avec les autres agents présents dans le canal.",
+        },
+        _ => match role {
+            "architect" => "You are the Lead Software Architect of the Simply Agent Hub collective. Your mission is to design technical architectures, break down tasks into clean milestones, specify API/database contracts, and coordinate other CLI agents (Developer, Reviewer, Tester) on the orchestration channel.",
+            "developer" => "You are the Lead Implementation Developer of the Simply Agent Hub collective. Your mission is to write clean, performant, and idiomatic code in the shared workspace (/srv), implement architecture specifications, and address code review feedback.",
+            "reviewer" => "You are the Code Reviewer & QA Specialist of the Simply Agent Hub collective. Your mission is to inspect changes, spot potential bugs and edge cases, ensure error handling and security standards, and provide constructive feedback on the channel.",
+            "tester" => "You are the QA & E2E Test Engineer of the Simply Agent Hub collective. Your mission is to write and execute unit tests, integration tests, and verification scripts, ensuring builds compile cleanly with zero warnings or regressions.",
+            "security" => "You are the Security & DevSecOps Auditor of the Simply Agent Hub collective. Your mission is to audit permissions, rootless container boundaries, credentials safety, and input sanitization.",
+            _ => "You are a versatile CLI agent connected to the Simply Agent Hub orchestration bus. Collaborate cleanly and effectively with other agents on the channel.",
+        },
     }
 }
 
@@ -66,7 +80,7 @@ pub async fn connect_and_migrate(
         let seeds = vec![
             cli_instance::ActiveModel {
                 id: Set(codex_id),
-                name: Set("Codex #1 (Principal)".to_string()),
+                name: Set("Codex #1 (Primary)".to_string()),
                 kind: Set("codex".to_string()),
                 transport: Set("ws".to_string()),
                 endpoint_url: Set(default_codex_ws.to_string()),
@@ -80,7 +94,7 @@ pub async fn connect_and_migrate(
             },
             cli_instance::ActiveModel {
                 id: Set(agy_id),
-                name: Set("Antigravity #1 (Principal)".to_string()),
+                name: Set("Antigravity #1 (Primary)".to_string()),
                 kind: Set("antigravity".to_string()),
                 transport: Set("rpc".to_string()),
                 endpoint_url: Set(default_agy_rpc.to_string()),
@@ -94,7 +108,7 @@ pub async fn connect_and_migrate(
             },
             cli_instance::ActiveModel {
                 id: Set(claude_id),
-                name: Set("Claude Code #1 (Principal)".to_string()),
+                name: Set("Claude Code #1 (Primary)".to_string()),
                 kind: Set("claude".to_string()),
                 transport: Set("rpc".to_string()),
                 endpoint_url: Set(default_claude_rpc.to_string()),
@@ -108,7 +122,7 @@ pub async fn connect_and_migrate(
             },
             cli_instance::ActiveModel {
                 id: Set(goose_id),
-                name: Set("Goose #1 (ACP Serve)".to_string()),
+                name: Set("Goose #1 (ACP Server)".to_string()),
                 kind: Set("goose".to_string()),
                 transport: Set("ws".to_string()),
                 endpoint_url: Set(default_goose_ws.to_string()),
@@ -134,7 +148,7 @@ pub async fn connect_and_migrate(
                 id: Set(Uuid::new_v4()),
                 name: Set("general".to_string()),
                 description: Set(Some(
-                    "Canal principal d'orchestration inter-agents".to_string(),
+                    "Primary multi-agent orchestration channel".to_string(),
                 )),
                 participant_ids_json: Set(participants),
                 retention_days: Set(30),

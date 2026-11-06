@@ -114,6 +114,30 @@ body {
     flex-wrap: wrap;
 }
 
+.lang-selector {
+    display: inline-flex;
+    border-radius: var(--radius);
+    overflow: hidden;
+    border: 1px solid var(--border);
+}
+
+.lang-selector .btn-lang {
+    border: none;
+    border-radius: 0;
+    padding: 0.2rem 0.55rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    background: var(--bg-surface);
+    color: var(--text-muted);
+    transition: var(--transition-fast);
+}
+
+.lang-selector .btn-lang.active {
+    background: var(--accent);
+    color: #17191b;
+}
+
 /* ─── Status Badges ─────────────────────────────────────── */
 
 .badge {
