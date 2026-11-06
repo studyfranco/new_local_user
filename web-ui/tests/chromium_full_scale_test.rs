@@ -752,17 +752,51 @@ async fn full_scale_chromium_and_local_instances_e2e() {
     let _ = cdp_eval(&mut cdp_ws, 600, "window.switchTab('console'); true").await;
     sleep(Duration::from_millis(300)).await;
 
-    let _ = cdp_eval(
+    // Header is condensed by default per requirements
+    let is_compact_default = cdp_eval(
         &mut cdp_ws,
         601,
+        "document.body.classList.contains('compact-header')",
+    )
+    .await;
+    assert_eq!(
+        is_compact_default,
+        json!(true),
+        "Header should be in compact mode by default"
+    );
+
+    // Test toggling off then back on
+    let _ = cdp_eval(
+        &mut cdp_ws,
+        602,
         "document.getElementById('btn-toggle-compact-header')?.click(); true",
     )
     .await;
-    sleep(Duration::from_millis(400)).await;
+    sleep(Duration::from_millis(300)).await;
+
+    let is_expanded = cdp_eval(
+        &mut cdp_ws,
+        603,
+        "document.body.classList.contains('compact-header')",
+    )
+    .await;
+    assert_eq!(
+        is_expanded,
+        json!(false),
+        "Header should expand after clicking toggle"
+    );
+
+    let _ = cdp_eval(
+        &mut cdp_ws,
+        604,
+        "document.getElementById('btn-toggle-compact-header')?.click(); true",
+    )
+    .await;
+    sleep(Duration::from_millis(300)).await;
 
     let is_compact = cdp_eval(
         &mut cdp_ws,
-        602,
+        605,
         "document.body.classList.contains('compact-header')",
     )
     .await;
@@ -775,7 +809,7 @@ async fn full_scale_chromium_and_local_instances_e2e() {
     // Screenshot 10: Minimized Top Menu / Compact Header
     save_screenshot(
         &mut cdp_ws,
-        603,
+        606,
         &screenshot_dir.join("chromium_10_compact_header.png"),
     )
     .await;

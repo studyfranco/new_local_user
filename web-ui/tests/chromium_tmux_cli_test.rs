@@ -370,13 +370,37 @@ async fn chromium_tmux_cli_agents_e2e_verification() {
         "Antigravity terminal must reflect sent input"
     );
 
-    // Save screenshot of Antigravity terminal session
+    // Save screenshot of Antigravity terminal session taking 100% of workspace
     save_screenshot(
         &mut ws_stream,
         140,
         &artifact_dir.join("chromium_14_agy_tmux_connected.png"),
     )
     .await;
+
+    // Test terminal maximize across the full viewport
+    let _ = cdp_eval(
+        &mut ws_stream,
+        142,
+        "document.getElementById('btn-term-maximize')?.click(); true",
+    )
+    .await;
+    sleep(Duration::from_millis(300)).await;
+
+    save_screenshot(
+        &mut ws_stream,
+        143,
+        &artifact_dir.join("chromium_16_terminal_fullscreen_maximized.png"),
+    )
+    .await;
+
+    let _ = cdp_eval(
+        &mut ws_stream,
+        144,
+        "document.getElementById('btn-term-maximize')?.click(); true",
+    )
+    .await;
+    sleep(Duration::from_millis(300)).await;
 
     // Close terminal modal
     let _ = cdp_eval(&mut ws_stream, 141, "window.closeModal('terminal'); true").await;

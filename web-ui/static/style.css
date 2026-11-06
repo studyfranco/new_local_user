@@ -192,27 +192,36 @@ body {
 
 .tab-nav {
     display: flex;
-    gap: 0.25rem;
-    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem;
+    margin-bottom: 0.85rem;
     border-bottom: 2px solid var(--border);
     padding-bottom: 0;
-    overflow-x: auto;
+    overflow: visible;
+}
+
+.tab-nav::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
 }
 
 .tab-btn {
-    padding: 0.65rem 1.3rem;
+    padding: 0.5rem 1rem;
     background: transparent;
     border: none;
     border-bottom: 2px solid transparent;
     color: var(--text-muted);
     font-family: var(--font-sans);
-    font-size: 0.92rem;
+    font-size: 0.88rem;
     font-weight: 600;
     cursor: pointer;
     transition: all var(--transition-base);
     position: relative;
     bottom: -2px;
     white-space: nowrap;
+    outline: none;
 }
 
 .tab-btn:hover {
@@ -315,32 +324,56 @@ body.sidebar-collapsed-active .btn-expand-sidebar-pill {
 }
 
 /* ─── Compact Header / Minimized Top Bar ──────────────────── */
+body.compact-header .top-bar {
+    padding-top: 0;
+}
+
 body.compact-header .header {
-    padding: 0.35rem 0;
-    gap: 0.5rem;
+    padding: 0.2rem 0;
+    margin-bottom: 0.35rem;
+    padding-bottom: 0.35rem;
+    gap: 0.45rem;
 }
 
 body.compact-header .logo-icon {
-    width: 24px;
-    height: 24px;
+    width: 22px;
+    height: 22px;
+    border-radius: 5px;
 }
 
 body.compact-header .logo h1 {
-    font-size: 1.15rem;
+    font-size: 1.05rem;
+    font-weight: 700;
+}
+
+body.compact-header .header-actions {
+    gap: 0.35rem;
+}
+
+body.compact-header .header-actions .btn {
+    padding: 0.25rem 0.55rem;
+    font-size: 0.78rem;
+    line-height: 1.2;
+}
+
+body.compact-header .header-actions .badge {
+    padding: 0.2rem 0.5rem;
+    font-size: 0.75rem;
 }
 
 body.compact-header .tab-nav {
-    margin-bottom: 0.5rem;
-    gap: 0.15rem;
+    margin-bottom: 0.4rem;
+    gap: 0.2rem;
 }
 
 body.compact-header .tab-btn {
-    padding: 0.35rem 0.85rem;
+    padding: 0.25rem 0.75rem;
     font-size: 0.82rem;
 }
 
 body.compact-header .container {
-    padding-top: 0.35rem;
+    padding-top: 0.25rem;
+    padding-bottom: 0.5rem;
 }
 
 body.compact-header .subtitle {
@@ -489,8 +522,40 @@ body.compact-header .subtitle {
 .chat-card {
     display: flex;
     flex-direction: column;
-    height: calc(100vh - 210px);
+    height: calc(100vh - 165px);
     min-height: 520px;
+}
+
+body.compact-header .chat-card {
+    height: calc(100vh - 110px);
+}
+
+/* When native terminal is active in chat-card, terminal takes 100% of the workspace */
+.chat-card.terminal-active .messages-stream,
+.chat-card.terminal-active .composer-bar,
+.chat-card.terminal-active #console-approval-banner {
+    display: none !important;
+}
+
+.chat-card.terminal-active .native-terminal-drawer {
+    flex: 1;
+    height: 100%;
+    min-height: calc(100vh - 190px);
+    margin-bottom: 0;
+}
+
+body.compact-header .chat-card.terminal-active .native-terminal-drawer {
+    min-height: calc(100vh - 145px);
+}
+
+.chat-card.terminal-active .terminal-viewport {
+    flex: 1;
+    height: 100%;
+    min-height: calc(100vh - 270px);
+}
+
+body.compact-header .chat-card.terminal-active .terminal-viewport {
+    min-height: calc(100vh - 215px);
 }
 
 .chat-header {
@@ -764,28 +829,29 @@ body.compact-header .subtitle {
 
 /* ─── Native Interactive Terminal (ANSI Tmux WebSocket) ──── */
 .native-terminal-drawer {
-    background-color: #151719;
+    background-color: #121417;
     border: 1px solid var(--accent);
     border-radius: var(--radius);
     padding: 0.75rem;
-    margin-bottom: 0.85rem;
+    margin-bottom: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.6rem;
-    height: 60vh;
-    min-height: 440px;
+    gap: 0.5rem;
+    flex: 1;
+    height: 100%;
+    min-height: 480px;
     transition: all var(--transition-base);
 }
 
 .terminal-viewport {
-    background-color: #0e1012;
+    background-color: #0a0b0d;
     color: #eff0f1;
     font-family: var(--font-mono);
-    font-size: 0.85rem;
+    font-size: 0.88rem;
     line-height: 1.4;
     flex: 1;
     height: 100%;
-    min-height: 320px;
+    min-height: 360px;
     overflow-y: auto;
     padding: 0.75rem;
     border: 1px solid var(--border);
@@ -797,22 +863,27 @@ body.compact-header .subtitle {
 
 .native-terminal-drawer.maximized {
     position: fixed !important;
-    top: 8px !important;
-    left: 8px !important;
-    right: 8px !important;
-    bottom: 8px !important;
-    width: calc(100vw - 16px) !important;
-    height: calc(100vh - 16px) !important;
-    max-height: calc(100vh - 16px) !important;
-    z-index: 9999 !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    max-height: 100vh !important;
+    z-index: 99999 !important;
     background-color: #090a0c !important;
-    border: 2px solid var(--accent) !important;
-    box-shadow: 0 10px 50px rgba(0, 0, 0, 0.95) !important;
-    border-radius: var(--radius) !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
     margin: 0 !important;
+    padding: 0.65rem 1rem !important;
 }
 
 .native-terminal-drawer.maximized .terminal-viewport {
+    font-size: 0.95rem;
+    height: calc(100vh - 90px) !important;
+    flex: 1;
+}
     font-size: 0.94rem;
     height: 100%;
     flex: 1;

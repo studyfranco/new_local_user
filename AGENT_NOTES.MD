@@ -227,6 +227,30 @@
       - `chromium_14_agy_tmux_connected.png`
       - `chromium_15_codex_tmux_connected.png`
 
+#### 14. Responsive Top Navigation (No Scrollbars), Default Condensed Header & Full Workspace Terminal Active Mode
+* **Finding**: In Linux/Chromium environments with GTK, CSS `overflow-x: auto` on `.tab-nav` triggered sub-pixel vertical overflow, rendering an unsightly vertical scrollbar with arrow buttons (▲/▼) that broke responsiveness. In addition, the header previously defaulted to expanded mode, consuming valuable vertical screen real estate. When launching or attaching a terminal drawer inside `.chat-card`, the terminal was squeezed above the chat message stream and prompt input bar instead of occupying the full available height of the workspace.
+* **Resolution**:
+  - **Responsive Tab Navigation Without Scrollbars (`web-ui/static/style.css`)**:
+    - Changed `.tab-nav` to `flex-wrap: wrap; overflow: visible; gap: 0.35rem;`.
+    - Added `::-webkit-scrollbar { display: none; }` and `scrollbar-width: none;` on tab containers.
+    - Buttons now flow and wrap responsively across different viewport widths without ever creating horizontal or vertical scrollbars.
+  - **Condensed Header Active by Default (`web-ui/static/index.html` & `app.js`)**:
+    - Initialized `<body class="compact-header">` in HTML.
+    - Defaulted `compact-header` to active on application startup unless explicitly disabled (`localStorage.getItem("agent_hub_compact_header") !== "false"`).
+    - Reduced header padding, shrunk title and logo icon size, saving ~80px of vertical height across all views (including CLI console).
+  - **Terminal Active Mode Maximizing Workspace (`web-ui/static/style.css` & `app.js`)**:
+    - Implemented `.chat-card.terminal-active` state class toggled whenever the native terminal is connected or displayed.
+    - When `.terminal-active` is engaged, `.messages-stream`, `.composer-bar`, and `#console-approval-banner` are cleanly hidden via `display: none !important;`.
+    - Expanded `.native-terminal-drawer` to occupy 100% of the available card height (`calc(100vh - 145px)`) with the terminal viewport stretching to `calc(100vh - 215px)`.
+    - Enhanced `.native-terminal-drawer.maximized` to true edge-to-edge full screen (`position: fixed; inset: 0; width: 100vw; height: 100vh; margin: 0; border: none; border-radius: 0; z-index: 1000;`).
+  - **Automated Verification**:
+    - Updated both `chromium_full_scale_test.rs` and `chromium_tmux_cli_test.rs`.
+    - Captured and visually verified screenshots:
+      - `chromium_14_agy_tmux_connected.png` (Antigravity CLI attached with responsive menu & full-height terminal)
+      - `chromium_15_codex_tmux_connected.png` (Codex CLI attached in full-height terminal)
+      - `chromium_16_terminal_fullscreen_maximized.png` (True 100vw x 100vh edge-to-edge fullscreen terminal)
+    - Full test suite passed (15/15 tests).
+
 ---
 
 ### Verification Summary

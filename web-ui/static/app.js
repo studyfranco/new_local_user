@@ -1047,6 +1047,7 @@
 
         const drawer = $("native-terminal-drawer");
         drawer.classList.remove("hidden");
+        document.querySelector(".chat-card")?.classList.add("terminal-active");
         const viewport = $("terminal-viewport");
         const statusEl = $("terminal-ws-status");
         statusEl.textContent = t("connectingTo", inst.name);
@@ -1097,6 +1098,8 @@
     window.closeModal = function (modalName) {
         if (modalName === "terminal-modal" || modalName === "terminal") {
             $("native-terminal-drawer").classList.add("hidden");
+            $("native-terminal-drawer").classList.remove("maximized");
+            document.querySelector(".chat-card")?.classList.remove("terminal-active");
             if (state.terminalWs) {
                 state.terminalWs.onclose = null;
                 state.terminalWs.onerror = null;
@@ -1122,7 +1125,12 @@
             connectNativeTerminal();
         } else {
             drawer.classList.add("hidden");
+            drawer.classList.remove("maximized");
+            document.querySelector(".chat-card")?.classList.remove("terminal-active");
             if (state.terminalWs) {
+                state.terminalWs.onclose = null;
+                state.terminalWs.onerror = null;
+                state.terminalWs.onmessage = null;
                 state.terminalWs.close();
                 state.terminalWs = null;
             }
@@ -1152,7 +1160,11 @@
     $("btn-term-close").addEventListener("click", () => {
         $("native-terminal-drawer").classList.add("hidden");
         $("native-terminal-drawer").classList.remove("maximized");
+        document.querySelector(".chat-card")?.classList.remove("terminal-active");
         if (state.terminalWs) {
+            state.terminalWs.onclose = null;
+            state.terminalWs.onerror = null;
+            state.terminalWs.onmessage = null;
             state.terminalWs.close();
             state.terminalWs = null;
         }
@@ -2139,7 +2151,7 @@
     renderLanguageSwitcher();
     window.setAppLanguage(currentLang);
 
-    if (localStorage.getItem("agent_hub_compact_header") === "true") {
+    if (localStorage.getItem("agent_hub_compact_header") !== "false") {
         toggleCompactHeader(true);
     }
     if (localStorage.getItem("agent_hub_sidebar_collapsed") === "true") {
