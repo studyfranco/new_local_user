@@ -273,6 +273,78 @@ body {
     grid-template-columns: 350px 1fr;
     gap: 1.25rem;
     align-items: start;
+    transition: grid-template-columns var(--transition-base);
+}
+
+.workspace-grid.sidebar-collapsed {
+    grid-template-columns: 1fr !important;
+}
+
+.workspace-grid.sidebar-collapsed aside.card {
+    display: none !important;
+}
+
+.btn-expand-sidebar-pill {
+    position: fixed;
+    top: 130px;
+    left: 0;
+    z-index: 90;
+    background: var(--bg-surface);
+    border: 1px solid var(--accent);
+    border-left: none;
+    border-radius: 0 8px 8px 0;
+    color: var(--accent);
+    padding: 0.45rem 0.65rem;
+    font-weight: 700;
+    font-size: 0.82rem;
+    cursor: pointer;
+    box-shadow: 2px 2px 10px rgba(0, 0, 0, 0.6);
+    display: none;
+    transition: var(--transition-fast);
+}
+
+.btn-expand-sidebar-pill:hover {
+    background: var(--accent);
+    color: #161b24;
+}
+
+body.sidebar-collapsed-active .btn-expand-sidebar-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+/* ─── Compact Header / Minimized Top Bar ──────────────────── */
+body.compact-header .header {
+    padding: 0.35rem 0;
+    gap: 0.5rem;
+}
+
+body.compact-header .logo-icon {
+    width: 24px;
+    height: 24px;
+}
+
+body.compact-header .logo h1 {
+    font-size: 1.15rem;
+}
+
+body.compact-header .tab-nav {
+    margin-bottom: 0.5rem;
+    gap: 0.15rem;
+}
+
+body.compact-header .tab-btn {
+    padding: 0.35rem 0.85rem;
+    font-size: 0.82rem;
+}
+
+body.compact-header .container {
+    padding-top: 0.35rem;
+}
+
+body.compact-header .subtitle {
+    display: none;
 }
 
 @media (max-width: 1024px) {
@@ -690,7 +762,7 @@ body {
     cursor: pointer;
 }
 
-/* ─── Native Interactive Terminal (xterm.js + ANSI Tmux) ─── */
+/* ─── Native Interactive Terminal (ANSI Tmux WebSocket) ──── */
 .native-terminal-drawer {
     background-color: #151719;
     border: 1px solid var(--accent);
@@ -700,15 +772,20 @@ body {
     display: flex;
     flex-direction: column;
     gap: 0.6rem;
+    height: 60vh;
+    min-height: 440px;
+    transition: all var(--transition-base);
 }
 
 .terminal-viewport {
     background-color: #0e1012;
     color: #eff0f1;
     font-family: var(--font-mono);
-    font-size: 0.82rem;
+    font-size: 0.85rem;
     line-height: 1.4;
-    height: 310px;
+    flex: 1;
+    height: 100%;
+    min-height: 320px;
     overflow-y: auto;
     padding: 0.75rem;
     border: 1px solid var(--border);
@@ -716,6 +793,29 @@ body {
     white-space: pre-wrap;
     word-break: break-word;
     outline: none;
+}
+
+.native-terminal-drawer.maximized {
+    position: fixed !important;
+    top: 8px !important;
+    left: 8px !important;
+    right: 8px !important;
+    bottom: 8px !important;
+    width: calc(100vw - 16px) !important;
+    height: calc(100vh - 16px) !important;
+    max-height: calc(100vh - 16px) !important;
+    z-index: 9999 !important;
+    background-color: #090a0c !important;
+    border: 2px solid var(--accent) !important;
+    box-shadow: 0 10px 50px rgba(0, 0, 0, 0.95) !important;
+    border-radius: var(--radius) !important;
+    margin: 0 !important;
+}
+
+.native-terminal-drawer.maximized .terminal-viewport {
+    font-size: 0.94rem;
+    height: 100%;
+    flex: 1;
 }
 
 .terminal-viewport:focus {

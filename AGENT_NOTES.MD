@@ -82,6 +82,14 @@
   - Authored [`web-ui/api.yml`](web-ui/api.yml) specifying the complete OpenAPI 3.1.0 contract.
   - Added automated test in `frontend_syntax_test.rs` ensuring OpenAPI coverage.
 
+#### 6. Ergonomics: Compact Header, Retractable Sidebar & High-Screen Terminal
+* **Finding**: The top header and static sidebar occupied significant screen real estate, reducing the visible canvas for code, git diffs, and terminal execution.
+* **Resolution**:
+  - **Minimized Top Menu (`compact-header`)**: Added `#btn-toggle-compact-header` to collapse header padding, slim the tab bar, and reclaim vertical screen space, with persistence in `localStorage`.
+  - **Retractable Left Sidebar (`sidebar-collapsed`)**: Added `#btn-toggle-sidebar` and floating `#btn-expand-sidebar-pill` allowing the left menu to retract completely, expanding the main workspace across 100% of the screen width.
+  - **High-Screen & Maximized Native Terminal**: Increased default terminal drawer height to 60vh (min 440px) and added `#btn-term-maximize` allowing the terminal to occupy 98% of viewport width and height (`fixed` overlay with Escape key restoration).
+  - Validated via automated Chromium CDP test scenarios, generating screenshots `chromium_10_compact_header.png`, `chromium_11_sidebar_retracted.png`, and `chromium_12_terminal_maximized.png`.
+
 ---
 
 ### Verification Summary

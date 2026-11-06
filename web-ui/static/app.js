@@ -116,6 +116,12 @@
             onboardSuccess: (role) => `Role "${role}" initialized.`,
             participantsUpdated: "Channel participants updated in SeaORM database.",
             retentionApplied: (days, max, pruned) => `Retention applied (${days}d / max ${max} messages). Pruned: ${pruned}.`,
+            btnCompactHeader: "🗕 Header",
+            btnExpandHeader: "🗖 Header",
+            btnToggleSidebar: "◀ Sidebar",
+            btnExpandSidebar: "▶ Sidebar",
+            btnMaximizeTerm: "🗖 Maximize",
+            btnRestoreTerm: "🗗 Restore",
         },
         fr: {
             appTitle: "Simply Agent Hub",
@@ -231,6 +237,12 @@
             onboardSuccess: (role) => `Rôle « ${role} » initialisé.`,
             participantsUpdated: "Participants du canal mis à jour en base SeaORM.",
             retentionApplied: (days, max, pruned) => `Politique appliquée (${days}j / max ${max} messages). Messages purgés: ${pruned}.`,
+            btnCompactHeader: "🗕 En-tête",
+            btnExpandHeader: "🗖 En-tête",
+            btnToggleSidebar: "◀ Menu",
+            btnExpandSidebar: "▶ Menu",
+            btnMaximizeTerm: "🗖 Agrandir",
+            btnRestoreTerm: "🗗 Réduire",
         },
         de: {
             appTitle: "Simply Agent Hub",
@@ -346,6 +358,12 @@
             onboardSuccess: (role) => `Rolle "${role}" initialisiert.`,
             participantsUpdated: "Kanalteilnehmer in SeaORM-Datenbank aktualisiert.",
             retentionApplied: (days, max, pruned) => `Aufbewahrung angewendet (${days} Tage / max. ${max} Nachrichten). Bereinigt: ${pruned}.`,
+            btnCompactHeader: "🗕 Kopfzeile",
+            btnExpandHeader: "🗖 Kopfzeile",
+            btnToggleSidebar: "◀ Menü",
+            btnExpandSidebar: "▶ Menü",
+            btnMaximizeTerm: "🗖 Maximieren",
+            btnRestoreTerm: "🗗 Verkleinern",
         }
     };
 
@@ -1006,8 +1024,29 @@
         }
     });
 
+    function toggleTerminalMaximize(force) {
+        const drawer = $("native-terminal-drawer");
+        if (!drawer) return;
+        const isMaximized = typeof force === "boolean"
+            ? force
+            : !drawer.classList.contains("maximized");
+        drawer.classList.toggle("maximized", isMaximized);
+        const maxBtn = $("btn-term-maximize");
+        if (maxBtn) {
+            maxBtn.textContent = isMaximized ? t("btnRestoreTerm") : t("btnMaximizeTerm");
+            maxBtn.title = isMaximized ? "Restore terminal window" : "Maximize terminal across screen";
+        }
+        const viewport = $("terminal-viewport");
+        if (viewport) {
+            viewport.scrollTop = viewport.scrollHeight;
+        }
+    }
+
+    $("btn-term-maximize")?.addEventListener("click", () => toggleTerminalMaximize());
+
     $("btn-term-close").addEventListener("click", () => {
         $("native-terminal-drawer").classList.add("hidden");
+        $("native-terminal-drawer").classList.remove("maximized");
         if (state.terminalWs) {
             state.terminalWs.close();
             state.terminalWs = null;
@@ -1789,6 +1828,33 @@
         });
     }
 
+    function toggleSidebar(force) {
+        const grids = document.querySelectorAll(".workspace-grid");
+        const anyCollapsed = grids[0]?.classList.contains("sidebar-collapsed");
+        const shouldCollapse = typeof force === "boolean" ? !force : !anyCollapsed;
+        grids.forEach((g) => g.classList.toggle("sidebar-collapsed", shouldCollapse));
+        document.body.classList.toggle("sidebar-collapsed-active", shouldCollapse);
+        localStorage.setItem("agent_hub_sidebar_collapsed", shouldCollapse ? "true" : "false");
+        const btn = $("btn-toggle-sidebar");
+        if (btn) {
+            btn.textContent = shouldCollapse ? t("btnExpandSidebar") : t("btnToggleSidebar");
+        }
+    }
+
+    function toggleCompactHeader(force) {
+        const isCurrentlyCompact = document.body.classList.contains("compact-header");
+        const shouldBeCompact = typeof force === "boolean" ? force : !isCurrentlyCompact;
+        document.body.classList.toggle("compact-header", shouldBeCompact);
+        localStorage.setItem("agent_hub_compact_header", shouldBeCompact ? "true" : "false");
+        const btn = $("btn-toggle-compact-header");
+        if (btn) {
+            btn.textContent = shouldBeCompact ? t("btnExpandHeader") : t("btnCompactHeader");
+        }
+    }
+
+    window.toggleSidebar = toggleSidebar;
+    window.toggleCompactHeader = toggleCompactHeader;
+    window.toggleTerminalMaximize = toggleTerminalMaximize;
     window.detectBrowserLanguage = detectBrowserLanguage;
     window.renderLanguageSwitcher = renderLanguageSwitcher;
     window.I18N = I18N;
@@ -1815,6 +1881,19 @@
             if (k) el.textContent = t(k);
         });
 
+        // Update dynamic action buttons
+        const isCollapsed = document.body.classList.contains("sidebar-collapsed-active");
+        const btnSb = $("btn-toggle-sidebar");
+        if (btnSb) btnSb.textContent = isCollapsed ? t("btnExpandSidebar") : t("btnToggleSidebar");
+
+        const isCompact = document.body.classList.contains("compact-header");
+        const btnH = $("btn-toggle-compact-header");
+        if (btnH) btnH.textContent = isCompact ? t("btnExpandHeader") : t("btnCompactHeader");
+
+        const isTermMax = $("native-terminal-drawer")?.classList.contains("maximized");
+        const btnTm = $("btn-term-maximize");
+        if (btnTm) btnTm.textContent = isTermMax ? t("btnRestoreTerm") : t("btnMaximizeTerm");
+
         loadRolePresets();
         renderCliSelector();
         renderInventoryTable();
@@ -1822,10 +1901,29 @@
 
     window.state = state;
 
+    $("btn-toggle-sidebar")?.addEventListener("click", () => toggleSidebar());
+    $("btn-toggle-compact-header")?.addEventListener("click", () => toggleCompactHeader());
+
+    document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+            const drawer = $("native-terminal-drawer");
+            if (drawer?.classList.contains("maximized")) {
+                toggleTerminalMaximize(false);
+            }
+        }
+    });
+
     // Init
     currentLang = detectBrowserLanguage();
     renderLanguageSwitcher();
     window.setAppLanguage(currentLang);
+
+    if (localStorage.getItem("agent_hub_compact_header") === "true") {
+        toggleCompactHeader(true);
+    }
+    if (localStorage.getItem("agent_hub_sidebar_collapsed") === "true") {
+        toggleSidebar(false);
+    }
 
     loadRolePresets()
         .then(loadInstances)

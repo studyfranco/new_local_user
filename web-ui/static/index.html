@@ -23,6 +23,8 @@
                         <button id="lang-btn-fr" class="btn-lang" onclick="setAppLanguage('fr')" title="Passer en Français">FR</button>
                         <button id="lang-btn-de" class="btn-lang" onclick="setAppLanguage('de')" title="Auf Deutsch umstellen">DE</button>
                     </div>
+                    <button id="btn-toggle-sidebar" class="btn btn-secondary btn-sm" title="Toggle left sidebar (Retract / Expand)" data-i18n="btnToggleSidebar">◀ Sidebar</button>
+                    <button id="btn-toggle-compact-header" class="btn btn-secondary btn-sm" title="Toggle compact header (Maximize space)" data-i18n="btnCompactHeader">🗕 Header</button>
                     <span id="header-instances-count" class="badge badge-tier">0 CLIs registered</span>
                     <span id="header-active-cli-badge" class="badge badge-online">No CLI selected</span>
                     <button id="btn-refresh-all" class="btn btn-secondary btn-sm" data-i18n="btnRefreshAll">↻ Refresh Status</button>
@@ -39,6 +41,9 @@
             </nav>
         </div>
 
+        <!-- Floating expand pill when sidebar is retracted -->
+        <button id="btn-expand-sidebar-pill" class="btn-expand-sidebar-pill" title="Expand left sidebar" onclick="toggleSidebar(true)">▶ Menu</button>
+
         <!-- ═════════════════════════════════════════════════════════════════ -->
         <!-- TAB 1: UNIFIED CLI CONSOLE, ROLES, NATIVE TERMINAL & WEB AUTH     -->
         <!-- ═════════════════════════════════════════════════════════════════ -->
@@ -46,8 +51,13 @@
             <div class="workspace-grid">
                 <!-- Left Sidebar: Dropdown CLI Selector, Role Selector, Rename, Add, Web Auth -->
                 <aside class="card">
-                    <h2 data-i18n="cliSelectorTitle">CLI Container Selection</h2>
-                    <p class="subtitle" data-i18n="cliSelectorSubtitle">Select, rename, assign a role, or authenticate any of your CLI instances.</p>
+                    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:0.5rem;">
+                        <div>
+                            <h2 data-i18n="cliSelectorTitle">CLI Container Selection</h2>
+                            <p class="subtitle" data-i18n="cliSelectorSubtitle">Select, rename, assign a role, or authenticate any of your CLI instances.</p>
+                        </div>
+                        <button class="btn-retract-sidebar btn btn-cancel btn-sm" title="Retract sidebar" onclick="toggleSidebar(false)">◀</button>
+                    </div>
 
                     <div class="form-group">
                         <label for="cli-selector" data-i18n="activeCliLabel">Active CLI Instance</label>
@@ -210,6 +220,7 @@
                                 <span id="terminal-ws-status" class="badge badge-online" style="margin-left:0.5rem;">Connected</span>
                             </div>
                             <div class="btn-row" style="margin-top:0;">
+                                <button id="btn-term-maximize" class="btn btn-secondary btn-sm" title="Maximize terminal across entire screen" data-i18n="btnMaximizeTerm">🗖 Maximize</button>
                                 <button id="btn-term-ctrlc" class="btn btn-danger btn-sm" title="Send Ctrl+C">Ctrl+C</button>
                                 <button id="btn-term-enter" class="btn btn-secondary btn-sm" title="Send Enter">↵ Enter</button>
                                 <button id="btn-term-refresh" class="btn btn-secondary btn-sm">↻ Sync</button>
@@ -250,8 +261,13 @@
         <main id="tab-orchestration" class="tab-panel">
             <div class="workspace-grid">
                 <aside class="card">
-                    <h2 data-i18n="orchChannelsTitle">Orchestration Channels</h2>
-                    <p class="subtitle" data-i18n="orchChannelsSubtitle">Create a shared channel where multiple CLI instances (with distinct assigned roles) collaborate in real-time.</p>
+                    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:0.5rem;">
+                        <div>
+                            <h2 data-i18n="orchChannelsTitle">Orchestration Channels</h2>
+                            <p class="subtitle" data-i18n="orchChannelsSubtitle">Create a shared channel where multiple CLI instances (with distinct assigned roles) collaborate in real-time.</p>
+                        </div>
+                        <button class="btn-retract-sidebar btn btn-cancel btn-sm" title="Retract sidebar" onclick="toggleSidebar(false)">◀</button>
+                    </div>
 
                     <div class="form-group">
                         <label for="channel-selector" data-i18n="activeChannelLabel">Active Channel</label>

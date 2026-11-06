@@ -682,4 +682,136 @@ async fn full_scale_chromium_and_local_instances_e2e() {
         &screenshot_dir.join("chromium_07_retention_modal.png"),
     )
     .await;
+
+    // 10. Test Minimizing Top Menu / Header to Maximize Vertical Space
+    let _ = cdp_eval(&mut cdp_ws, 600, "window.switchTab('console'); true").await;
+    sleep(Duration::from_millis(300)).await;
+
+    let _ = cdp_eval(
+        &mut cdp_ws,
+        601,
+        "document.getElementById('btn-toggle-compact-header')?.click(); true",
+    )
+    .await;
+    sleep(Duration::from_millis(400)).await;
+
+    let is_compact = cdp_eval(
+        &mut cdp_ws,
+        602,
+        "document.body.classList.contains('compact-header')",
+    )
+    .await;
+    assert_eq!(
+        is_compact,
+        json!(true),
+        "Header should collapse into compact mode"
+    );
+
+    // Screenshot 10: Minimized Top Menu / Compact Header
+    save_screenshot(
+        &mut cdp_ws,
+        603,
+        &screenshot_dir.join("chromium_10_compact_header.png"),
+    )
+    .await;
+
+    // 11. Test Retracting Left Sidebar to Maximize Horizontal Space
+    let _ = cdp_eval(
+        &mut cdp_ws,
+        610,
+        "document.getElementById('btn-toggle-sidebar')?.click(); true",
+    )
+    .await;
+    sleep(Duration::from_millis(400)).await;
+
+    let is_sidebar_retracted = cdp_eval(
+        &mut cdp_ws,
+        611,
+        "document.querySelector('.workspace-grid')?.classList.contains('sidebar-collapsed')",
+    )
+    .await;
+    assert_eq!(
+        is_sidebar_retracted,
+        json!(true),
+        "Sidebar should be retracted in workspace-grid"
+    );
+
+    let aside_display = cdp_eval(
+        &mut cdp_ws,
+        612,
+        "window.getComputedStyle(document.querySelector('aside.card'))?.display || ''",
+    )
+    .await;
+    assert_eq!(
+        aside_display,
+        json!("none"),
+        "Left aside card should be hidden when sidebar is retracted"
+    );
+
+    // Screenshot 11: Retracted Left Sidebar (Full Width Workspace)
+    save_screenshot(
+        &mut cdp_ws,
+        613,
+        &screenshot_dir.join("chromium_11_sidebar_retracted.png"),
+    )
+    .await;
+
+    // 12. Test Maximizing Native Terminal Across Majority / Full Screen
+    let _ = cdp_eval(
+        &mut cdp_ws,
+        620,
+        "(() => { const c = window.state.instances.find(i => i.kind === 'claude'); if (c) window.openTerminalModal(c.id); return true; })()",
+    )
+    .await;
+    sleep(Duration::from_millis(600)).await;
+
+    // Maximize terminal window
+    let _ = cdp_eval(
+        &mut cdp_ws,
+        621,
+        "document.getElementById('btn-term-maximize')?.click(); true",
+    )
+    .await;
+    sleep(Duration::from_millis(500)).await;
+
+    let is_term_maximized = cdp_eval(
+        &mut cdp_ws,
+        622,
+        "document.getElementById('native-terminal-drawer')?.classList.contains('maximized')",
+    )
+    .await;
+    assert_eq!(
+        is_term_maximized,
+        json!(true),
+        "Native terminal drawer should have maximized class"
+    );
+
+    let term_width = cdp_eval(
+        &mut cdp_ws,
+        623,
+        "document.getElementById('native-terminal-drawer')?.getBoundingClientRect().width || 0",
+    )
+    .await;
+    let width_val = term_width.as_f64().unwrap_or(0.0);
+    assert!(
+        width_val > 1200.0,
+        "Maximized terminal should occupy majority of 1440px screen width, got: {width_val}"
+    );
+
+    // Screenshot 12: High-Screen & Maximized Native Terminal
+    save_screenshot(
+        &mut cdp_ws,
+        624,
+        &screenshot_dir.join("chromium_12_terminal_maximized.png"),
+    )
+    .await;
+
+    // Restore terminal, sidebar, and header back to standard view
+    let _ = cdp_eval(
+        &mut cdp_ws,
+        630,
+        "(() => { window.toggleTerminalMaximize(false); window.closeModal('terminal-modal'); window.toggleSidebar(true); window.toggleCompactHeader(false); return true; })()",
+    )
+    .await;
+    sleep(Duration::from_millis(300)).await;
 }
