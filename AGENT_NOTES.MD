@@ -142,6 +142,27 @@
   - **Automated Verification**:
     - Added unit test `test_database_foreign_key_and_join_indexes` asserting the catalog contains all 7 indexes, testing SeaORM `.find_related()` navigation, verifying `CASCADE` message deletion on channel removal, and `SET NULL` on instance removal.
 
+#### 10. Dedicated Master Table for Available Languages (`available_languages`)
+* **Finding**: Languages were previously derived implicitly from the `language_packs` table containing large JSON dictionary strings. The system lacked a dedicated, lightweight master table defining the available/supported languages, default language flags (`is_default`), and active statuses without requiring full dictionary table scans.
+* **Resolution**:
+  - **SeaORM Entity (`available_language.rs`)**:
+    - Created table `available_languages` with columns `id` (UUID PK), `code` (ISO 639-1 unique), `name`, `native_name`, `is_default` (boolean), `is_active` (boolean), `created_at`, `updated_at`.
+    - Declared SeaORM relations to `language_pack` (`has_one`) and `role_prompt` (`has_many`).
+  - **Migration (`m20261106_000004_available_languages.rs`)**:
+    - Authored migration creating `available_languages` and B-Tree indexes: `idx_available_languages_code`, `idx_available_languages_is_default`, and `idx_available_languages_is_active`.
+  - **Startup Reconciliation & Self-Healing (`defaults.rs`)**:
+    - Defined `CANONICAL_AVAILABLE_LANGUAGES` pre-seeding `en` (default), `fr`, and `de`.
+    - Implemented `ensure_available_languages_seeded(&db)` executed at startup in `ensure_database_defaults`.
+    - Implemented `list_available_languages(&db)` and `get_or_create_available_language(&db, code, name, native_name)`.
+  - **REST API Endpoints**:
+    - Added `GET /api/languages/available` returning lightweight language records.
+    - Added `POST /api/languages/available` to register new available languages.
+    - Updated `GET /api/languages` to query the `available_languages` master table.
+    - Synchronized `POST /api/languages` (pack upsertion) to automatically register the language in `available_languages`.
+  - **OpenAPI & Automated Verification**:
+    - Documented `/api/languages/available` and `AvailableLanguage` schemas in [`web-ui/api.yml`](web-ui/api.yml).
+    - Added test assertions in `test_role_prompts_and_language_packs_database_persistence_and_autohealing` and `test_database_foreign_key_and_join_indexes`.
+
 ---
 
 ### Verification Summary

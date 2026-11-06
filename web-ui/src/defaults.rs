@@ -4,13 +4,48 @@
 //! (`ensure_database_defaults`) that verifies the database tables (`role_prompts` and
 //! `language_packs`) and inserts any missing entries to heal incompletely initialized databases.
 
-use crate::entities::{language_pack, role_prompt};
+use crate::entities::{available_language, language_pack, role_prompt};
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter, Set,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter, QueryOrder,
+    Set,
 };
 use tracing::info;
 use uuid::Uuid;
+
+/// A canonical available language definition for database seeding and healing.
+pub struct CanonicalAvailableLanguage {
+    pub code: &'static str,
+    pub name: &'static str,
+    pub native_name: &'static str,
+    pub is_default: bool,
+    pub is_active: bool,
+}
+
+/// Canonical available languages pre-installed in the system.
+pub const CANONICAL_AVAILABLE_LANGUAGES: &[CanonicalAvailableLanguage] = &[
+    CanonicalAvailableLanguage {
+        code: "en",
+        name: "English",
+        native_name: "English",
+        is_default: true,
+        is_active: true,
+    },
+    CanonicalAvailableLanguage {
+        code: "fr",
+        name: "French",
+        native_name: "Français",
+        is_default: false,
+        is_active: true,
+    },
+    CanonicalAvailableLanguage {
+        code: "de",
+        name: "German",
+        native_name: "Deutsch",
+        is_default: false,
+        is_active: true,
+    },
+];
 
 /// A canonical default prompt definition for database seeding and healing.
 pub struct DefaultRolePromptSpec {
@@ -602,8 +637,94 @@ pub async fn ensure_language_packs_seeded(db: &DatabaseConnection) -> Result<usi
     Ok(added)
 }
 
-/// Reconciles both role prompts and language packs in the database.
+/// Checks the `available_languages` table and inserts any missing canonical languages.
+///
+/// Returns the number of missing languages that were inserted into the database.
+pub async fn ensure_available_languages_seeded(db: &DatabaseConnection) -> Result<usize, DbErr> {
+    let mut added = 0;
+    let now = Utc::now();
+
+    for canon in CANONICAL_AVAILABLE_LANGUAGES {
+        let exists = available_language::Entity::find()
+            .filter(available_language::Column::Code.eq(canon.code))
+            .one(db)
+            .await?;
+
+        if exists.is_none() {
+            let model = available_language::ActiveModel {
+                id: Set(Uuid::new_v4()),
+                code: Set(canon.code.to_string()),
+                name: Set(canon.name.to_string()),
+                native_name: Set(canon.native_name.to_string()),
+                is_default: Set(canon.is_default),
+                is_active: Set(canon.is_active),
+                created_at: Set(now),
+                updated_at: Set(now),
+            };
+            model.insert(db).await?;
+            added += 1;
+        }
+    }
+
+    if added > 0 {
+        info!("Database verification: healed/inserted {added} missing available language(s) in database");
+    }
+
+    Ok(added)
+}
+
+/// Retrieves all active available languages from the `available_languages` table,
+/// ensuring canonical entries are seeded.
+pub async fn list_available_languages(
+    db: &DatabaseConnection,
+) -> Result<Vec<available_language::Model>, DbErr> {
+    let _ = ensure_available_languages_seeded(db).await?;
+    available_language::Entity::find()
+        .filter(available_language::Column::IsActive.eq(true))
+        .order_by_desc(available_language::Column::IsDefault)
+        .order_by_asc(available_language::Column::Code)
+        .all(db)
+        .await
+}
+
+/// Registers or retrieves an available language from the `available_languages` table.
+pub async fn get_or_create_available_language(
+    db: &DatabaseConnection,
+    code: &str,
+    name: &str,
+    native_name: &str,
+) -> Result<available_language::Model, DbErr> {
+    let code = code.trim().to_lowercase();
+    if let Some(existing) = available_language::Entity::find()
+        .filter(available_language::Column::Code.eq(&code))
+        .one(db)
+        .await?
+    {
+        return Ok(existing);
+    }
+
+    let now = Utc::now();
+    let model = available_language::ActiveModel {
+        id: Set(Uuid::new_v4()),
+        code: Set(code),
+        name: Set(name.trim().to_string()),
+        native_name: Set(native_name.trim().to_string()),
+        is_default: Set(false),
+        is_active: Set(true),
+        created_at: Set(now),
+        updated_at: Set(now),
+    };
+    let saved = model.insert(db).await?;
+    info!(
+        "Database auto-healed: added available language '{}' into database",
+        saved.code
+    );
+    Ok(saved)
+}
+
+/// Reconciles available languages, role prompts and language packs in the database.
 pub async fn ensure_database_defaults(db: &DatabaseConnection) -> Result<(), DbErr> {
+    ensure_available_languages_seeded(db).await?;
     ensure_role_prompts_seeded(db).await?;
     ensure_language_packs_seeded(db).await?;
     Ok(())

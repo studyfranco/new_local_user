@@ -175,12 +175,12 @@ paths:
                     type: boolean
 
   # ==========================================================================
-  # Dynamic Language Packs (SeaORM language_packs persistence)
+  # Available Languages & Dynamic Language Packs (SeaORM persistence)
   # ==========================================================================
   /api/languages:
     get:
-      summary: List all registered language packs
-      description: Retrieves all available language packs (en, fr, de, and custom) persisted in the SeaORM language_packs database table.
+      summary: List all registered language packs & available languages
+      description: Retrieves all available languages (en, fr, de, and custom) persisted in the SeaORM available_languages and language_packs database tables.
       responses:
         "200":
           description: List of language packs
@@ -192,7 +192,7 @@ paths:
                   $ref: '#/components/schemas/LanguagePack'
     post:
       summary: Install or register a new language pack
-      description: Persists a complete i18n dictionary for a language code into the database.
+      description: Persists a complete i18n dictionary for a language code into the database and registers it in available_languages.
       requestBody:
         required: true
         content:
@@ -206,6 +206,36 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/LanguagePack'
+
+  /api/languages/available:
+    get:
+      summary: List available languages in database
+      description: Returns lightweight metadata for all active languages from the SeaORM available_languages table without loading dictionary payloads.
+      responses:
+        "200":
+          description: List of available languages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AvailableLanguage'
+    post:
+      summary: Register a new available language
+      description: Inserts a new language into the available_languages database table.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAvailableLanguageRequest'
+      responses:
+        "201":
+          description: Available language registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvailableLanguage'
 
   /api/languages/{lang}:
     parameters:
@@ -871,6 +901,50 @@ components:
         dictionary:
           type: object
           description: Key-value translations matching UI dictionary keys.
+
+    AvailableLanguage:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        code:
+          type: string
+          example: en
+        name:
+          type: string
+          example: English
+        native_name:
+          type: string
+          example: English
+        is_default:
+          type: boolean
+          example: true
+        is_active:
+          type: boolean
+          example: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateAvailableLanguageRequest:
+      type: object
+      required:
+        - code
+        - name
+      properties:
+        code:
+          type: string
+          example: it
+        name:
+          type: string
+          example: Italian
+        native_name:
+          type: string
+          example: Italiano
 
     Instance:
       type: object

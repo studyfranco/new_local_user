@@ -3,6 +3,7 @@ pub use sea_orm_migration::prelude::*;
 mod m20261105_000001_initial_schema;
 mod m20261106_000002_role_prompts_and_languages;
 mod m20261106_000003_foreign_key_indexes;
+mod m20261106_000004_available_languages;
 
 pub struct Migrator;
 
@@ -13,6 +14,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261105_000001_initial_schema::Migration),
             Box::new(m20261106_000002_role_prompts_and_languages::Migration),
             Box::new(m20261106_000003_foreign_key_indexes::Migration),
+            Box::new(m20261106_000004_available_languages::Migration),
         ]
     }
 }

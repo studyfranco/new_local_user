@@ -22,7 +22,10 @@ use axum::{
 };
 use bytes::Bytes;
 use chrono::Utc;
-use entities::{channel_message, cli_instance, language_pack, orchestration_channel, role_prompt};
+use entities::{
+    available_language, channel_message, cli_instance, language_pack, orchestration_channel,
+    role_prompt,
+};
 use futures_util::{SinkExt, StreamExt};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter, QueryOrder,
@@ -376,10 +379,14 @@ pub fn build_router(state: Arc<AppState>) -> Router {
             "/api/roles/presets/{role}",
             put(update_role_preset_by_role).delete(delete_role_preset_by_role),
         )
-        // Multilingual Language Packs CRUD (Persisted in DB)
+        // Multilingual Language Packs & Available Languages CRUD (Persisted in DB)
         .route(
             "/api/languages",
             get(list_language_packs).post(upsert_language_pack),
+        )
+        .route(
+            "/api/languages/available",
+            get(get_available_languages_handler).post(create_available_language_handler),
         )
         .route(
             "/api/languages/{lang}",
@@ -2464,24 +2471,67 @@ async fn delete_role_preset_by_role(
 }
 
 // ============================================================================
-// MULTILINGUAL LANGUAGE PACKS & DATABASE PERSISTENCE (/api/languages)
+// MULTILINGUAL AVAILABLE LANGUAGES & LANGUAGE PACKS (/api/languages)
 // ============================================================================
 async fn list_language_packs(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    match language_pack::Entity::find().order_by_asc(language_pack::Column::Lang).all(&state.db).await {
+    match defaults::list_available_languages(&state.db).await {
         Ok(list) => {
             let summary: Vec<Value> = list
                 .into_iter()
                 .map(|p| {
                     json!({
                         "id": p.id,
-                        "lang": p.lang,
+                        "code": p.code,
+                        "lang": p.code,
                         "name": p.name,
+                        "native_name": p.native_name,
+                        "is_default": p.is_default,
+                        "is_active": p.is_active,
                         "updated_at": p.updated_at
                     })
                 })
                 .collect();
             (StatusCode::OK, Json(json!(summary)))
         }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        ),
+    }
+}
+
+async fn get_available_languages_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    match defaults::list_available_languages(&state.db).await {
+        Ok(list) => (StatusCode::OK, Json(json!(list))),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        ),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateAvailableLanguageRequest {
+    pub code: String,
+    pub name: String,
+    pub native_name: Option<String>,
+}
+
+async fn create_available_language_handler(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<CreateAvailableLanguageRequest>,
+) -> impl IntoResponse {
+    let code = payload.code.trim().to_lowercase();
+    if code.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "Language code cannot be empty" })),
+        );
+    }
+    let name = payload.name.trim();
+    let native_name = payload.native_name.as_deref().unwrap_or(name);
+    match defaults::get_or_create_available_language(&state.db, &code, name, native_name).await {
+        Ok(saved) => (StatusCode::CREATED, Json(json!(saved))),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({ "error": e.to_string() })),
@@ -2544,6 +2594,9 @@ async fn upsert_language_pack(
     let name = payload.name.trim().to_string();
     let dict_str = serde_json::to_string(&payload.dictionary).unwrap_or_else(|_| "{}".to_string());
     let now = Utc::now();
+
+    // Ensure available_languages table has this language registered
+    let _ = defaults::get_or_create_available_language(&state.db, &lang, &name, &name).await;
 
     let existing = language_pack::Entity::find()
         .filter(language_pack::Column::Lang.eq(&lang))
@@ -2624,6 +2677,12 @@ async fn delete_language_pack_by_lang(
     Path(lang): Path<String>,
 ) -> impl IntoResponse {
     let lang = lang.trim().to_lowercase();
+    if lang != "en" {
+        let _ = available_language::Entity::delete_many()
+            .filter(available_language::Column::Code.eq(&lang))
+            .exec(&state.db)
+            .await;
+    }
     match language_pack::Entity::delete_many()
         .filter(language_pack::Column::Lang.eq(&lang))
         .exec(&state.db)
@@ -3545,6 +3604,56 @@ mod tests {
             es_pack["dictionary"]["fleet_title"],
             "Flota de Contenedores"
         );
+
+        // 7. Available languages table verification & API: GET /api/languages/available
+        let avail_db = available_language::Entity::find()
+            .all(&state.db)
+            .await
+            .unwrap_or_else(|e| panic!("failed to query available_languages: {e}"));
+        assert!(avail_db.len() >= 4); // en, fr, de + newly created es
+        let default_lang = avail_db.iter().find(|l| l.is_default);
+        assert_eq!(default_lang.map(|l| l.code.as_str()), Some("en"));
+
+        let avail_api_resp = client
+            .get(format!("{}/api/languages/available", base_url))
+            .send()
+            .await
+            .unwrap_or_else(|e| panic!("get available languages failed: {e}"));
+        assert_eq!(avail_api_resp.status(), StatusCode::OK);
+        let avail_api: Vec<Value> = avail_api_resp
+            .json()
+            .await
+            .unwrap_or_else(|e| panic!("json failed: {e}"));
+        let avail_codes: Vec<&str> = avail_api
+            .iter()
+            .filter_map(|l| l["code"].as_str())
+            .collect();
+        assert!(avail_codes.contains(&"en"));
+        assert!(avail_codes.contains(&"fr"));
+        assert!(avail_codes.contains(&"de"));
+        assert!(avail_codes.contains(&"es"));
+
+        // Register new available language via POST /api/languages/available
+        let reg_it_resp = client
+            .post(format!("{}/api/languages/available", base_url))
+            .json(&json!({
+                "code": "it",
+                "name": "Italian",
+                "native_name": "Italiano"
+            }))
+            .send()
+            .await
+            .unwrap_or_else(|e| panic!("post it language failed: {e}"));
+        assert_eq!(reg_it_resp.status(), StatusCode::CREATED);
+
+        let it_in_db = available_language::Entity::find()
+            .filter(available_language::Column::Code.eq("it"))
+            .one(&state.db)
+            .await
+            .unwrap_or_else(|e| panic!("query failed: {e}"))
+            .unwrap_or_else(|| panic!("Italian language not found in DB"));
+        assert_eq!(it_in_db.name, "Italian");
+        assert_eq!(it_in_db.native_name, "Italiano");
     }
 
     #[tokio::test]
@@ -3602,7 +3711,21 @@ mod tests {
             "Missing join index on role_prompts.lang"
         );
 
-        // 4. Verify foreign key relation integrity and cascading/SetNull behavior
+        // 4. Available languages table indexes
+        assert!(
+            index_names.contains(&"idx_available_languages_code".to_string()),
+            "Missing unique index on available_languages.code"
+        );
+        assert!(
+            index_names.contains(&"idx_available_languages_is_default".to_string()),
+            "Missing index on available_languages.is_default"
+        );
+        assert!(
+            index_names.contains(&"idx_available_languages_is_active".to_string()),
+            "Missing index on available_languages.is_active"
+        );
+
+        // 5. Verify foreign key relation integrity and cascading/SetNull behavior
         let now = Utc::now();
         let inst = cli_instance::ActiveModel {
             id: Set(Uuid::new_v4()),

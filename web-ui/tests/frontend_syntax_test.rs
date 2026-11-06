@@ -122,6 +122,7 @@ fn openapi_spec_exists_and_covers_endpoints() {
     assert!(content.contains("/api/roles/presets:"));
     assert!(content.contains("/api/roles/presets/{role}:"));
     assert!(content.contains("/api/languages:"));
+    assert!(content.contains("/api/languages/available:"));
     assert!(content.contains("/api/languages/{lang}:"));
     assert!(content.contains("/api/orchestration/channels:"));
     assert!(content.contains("/api/orchestration/channels/{id}/messages:"));
