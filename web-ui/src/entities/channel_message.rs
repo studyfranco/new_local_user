@@ -25,11 +25,25 @@ pub enum Relation {
         on_delete = "Cascade"
     )]
     OrchestrationChannel,
+    #[sea_orm(
+        belongs_to = "super::cli_instance::Entity",
+        from = "Column::SenderInstanceId",
+        to = "super::cli_instance::Column::Id",
+        on_update = "Cascade",
+        on_delete = "SetNull"
+    )]
+    CliInstance,
 }
 
 impl Related<super::orchestration_channel::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::OrchestrationChannel.def()
+    }
+}
+
+impl Related<super::cli_instance::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::CliInstance.def()
     }
 }
 

@@ -184,6 +184,59 @@ impl MigrationTrait for Migration {
                             .on_delete(ForeignKeyAction::Cascade)
                             .on_update(ForeignKeyAction::Cascade),
                     )
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("fk_channel_messages_sender_instance")
+                            .from(ChannelMessages::Table, ChannelMessages::SenderInstanceId)
+                            .to(CliInstances::Table, CliInstances::Id)
+                            .on_delete(ForeignKeyAction::SetNull)
+                            .on_update(ForeignKeyAction::Cascade),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_channel_messages_channel_id")
+                    .table(ChannelMessages::Table)
+                    .col(ChannelMessages::ChannelId)
+                    .if_not_exists()
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_channel_messages_sender_instance_id")
+                    .table(ChannelMessages::Table)
+                    .col(ChannelMessages::SenderInstanceId)
+                    .if_not_exists()
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_channel_messages_channel_created")
+                    .table(ChannelMessages::Table)
+                    .col(ChannelMessages::ChannelId)
+                    .col(ChannelMessages::CreatedAt)
+                    .if_not_exists()
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_cli_instances_role")
+                    .table(CliInstances::Table)
+                    .col(CliInstances::Role)
+                    .if_not_exists()
                     .to_owned(),
             )
             .await?;
@@ -192,6 +245,38 @@ impl MigrationTrait for Migration {
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        let _ = manager
+            .drop_index(
+                Index::drop()
+                    .name("idx_cli_instances_role")
+                    .table(CliInstances::Table)
+                    .to_owned(),
+            )
+            .await;
+        let _ = manager
+            .drop_index(
+                Index::drop()
+                    .name("idx_channel_messages_channel_created")
+                    .table(ChannelMessages::Table)
+                    .to_owned(),
+            )
+            .await;
+        let _ = manager
+            .drop_index(
+                Index::drop()
+                    .name("idx_channel_messages_sender_instance_id")
+                    .table(ChannelMessages::Table)
+                    .to_owned(),
+            )
+            .await;
+        let _ = manager
+            .drop_index(
+                Index::drop()
+                    .name("idx_channel_messages_channel_id")
+                    .table(ChannelMessages::Table)
+                    .to_owned(),
+            )
+            .await;
         manager
             .drop_table(Table::drop().table(ChannelMessages::Table).to_owned())
             .await?;

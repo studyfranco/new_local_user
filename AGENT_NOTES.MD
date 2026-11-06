@@ -123,6 +123,25 @@
     - Added comprehensive unit test `test_role_prompts_and_language_packs_database_persistence_and_autohealing` verifying database pre-seeding, deletion recovery (self-healing), custom preset upsertion, and Spanish language pack persistence.
     - Enhanced `chromium_full_scale_test.rs` to click `#btn-save-role-template` and assert the updated prompt template in the SeaORM database.
 
+#### 9. Foreign Key Constraints, Indexes on All Joins & SeaORM Relations
+* **Finding**: While primary keys and unique keys were indexed, foreign keys (`channel_id`, `sender_instance_id`) and join columns (`role`, `lang`) lacked dedicated B-Tree indexes, and `sender_instance_id` lacked an explicit foreign key definition to `cli_instances`. Without indexes on both sides of each join, relational database engines (PostgreSQL, SQLite, MySQL) are forced to perform full table scans during joins and cascade operations.
+* **Resolution**:
+  - **Foreign Key Constraints & Relations**:
+    - Added `fk_channel_messages_sender_instance` referencing `cli_instances(id)` with `on_delete: SetNull` and `on_update: Cascade`.
+    - Declared bidirectional SeaORM relations between `channel_message` and `cli_instance` (`Relation::CliInstance` and `Relation::ChannelMessage`).
+  - **Comprehensive Indexing on All Joins**:
+    - `channel_messages.channel_id` (`idx_channel_messages_channel_id`): accelerates joins with `orchestration_channels`.
+    - `channel_messages.sender_instance_id` (`idx_channel_messages_sender_instance_id`): accelerates joins with `cli_instances`.
+    - `channel_messages.(channel_id, created_at)` (`idx_channel_messages_channel_created`): composite index optimizing channel message pagination and timeline ordering.
+    - `cli_instances.role` (`idx_cli_instances_role`): indexes agent role lookups and joins with `role_prompts`.
+    - `role_prompts.role` (`idx_role_prompts_role`): accelerates joins on role definitions.
+    - `role_prompts.lang` (`idx_role_prompts_lang`): accelerates language-filtered lookups and joins with `language_packs`.
+  - **Migration & Upgrade Path**:
+    - Created migration `m20261106_000003_foreign_key_indexes.rs` with `.if_not_exists()` ensuring existing database files automatically apply all indexes on launch.
+    - Updated initial schema migration `m20261105_000001_initial_schema.rs` and `m20261106_000002_role_prompts_and_languages.rs` for fresh database builds.
+  - **Automated Verification**:
+    - Added unit test `test_database_foreign_key_and_join_indexes` asserting the catalog contains all 7 indexes, testing SeaORM `.find_related()` navigation, verifying `CASCADE` message deletion on channel removal, and `SET NULL` on instance removal.
+
 ---
 
 ### Verification Summary
@@ -131,7 +150,7 @@
 | :--- | :--- | :--- |
 | Clippy Gate | `cargo clippy --all-targets -- -D warnings` | **0 warnings, 0 errors** |
 | Unit Tests (`agent-bridge`) | `cargo test --bin agent-bridge` | **1 passed, 0 failed** |
-| Unit Tests (`agent-hub`) | `cargo test --bin agent-hub` | **7 passed, 0 failed** |
+| Unit Tests (`agent-hub`) | `cargo test --bin agent-hub` | **8 passed, 0 failed** |
 | Frontend Syntax & OpenAPI | `cargo test --test frontend_syntax_test` | **3 passed, 0 failed** |
 | Chromium CDP E2E | `cargo test --test chromium_full_scale_test` | **1 passed, 0 failed** |
-| **Total Test Suite** | `cargo test` | **12 passed, 0 failed** |
+| **Total Test Suite** | `cargo test` | **13 passed, 0 failed** |

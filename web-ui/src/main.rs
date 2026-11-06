@@ -3548,6 +3548,156 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_database_foreign_key_and_join_indexes() {
+        use sea_orm::{ConnectionTrait, DatabaseBackend, ModelTrait, Statement};
+
+        let (_base_url, state) = spawn_test_hub("/tmp").await;
+
+        // Query all indexes from the SQLite catalog
+        let rows = state
+            .db
+            .query_all_raw(Statement::from_string(
+                DatabaseBackend::Sqlite,
+                "SELECT name, tbl_name FROM sqlite_master WHERE type = 'index'".to_string(),
+            ))
+            .await
+            .unwrap_or_else(|e| panic!("failed to query indexes from sqlite_master: {e}"));
+
+        let index_names: Vec<String> = rows
+            .into_iter()
+            .filter_map(|r| r.try_get_by::<String, _>("name").ok())
+            .collect();
+
+        // 1. Channel messages foreign key indexes on both relations (orchestration_channels and cli_instances)
+        assert!(
+            index_names.contains(&"idx_channel_messages_channel_id".to_string()),
+            "Missing foreign key index on channel_messages.channel_id"
+        );
+        assert!(
+            index_names.contains(&"idx_channel_messages_sender_instance_id".to_string()),
+            "Missing foreign key index on channel_messages.sender_instance_id"
+        );
+        assert!(
+            index_names.contains(&"idx_channel_messages_channel_created".to_string()),
+            "Missing composite index on channel_messages(channel_id, created_at)"
+        );
+
+        // 2. CLI instances join index on role
+        assert!(
+            index_names.contains(&"idx_cli_instances_role".to_string()),
+            "Missing join index on cli_instances.role"
+        );
+
+        // 3. Role prompts join indexes on both role and lang
+        assert!(
+            index_names.contains(&"idx_role_prompts_role_lang".to_string()),
+            "Missing unique index on role_prompts(role, lang)"
+        );
+        assert!(
+            index_names.contains(&"idx_role_prompts_role".to_string()),
+            "Missing join index on role_prompts.role"
+        );
+        assert!(
+            index_names.contains(&"idx_role_prompts_lang".to_string()),
+            "Missing join index on role_prompts.lang"
+        );
+
+        // 4. Verify foreign key relation integrity and cascading/SetNull behavior
+        let now = Utc::now();
+        let inst = cli_instance::ActiveModel {
+            id: Set(Uuid::new_v4()),
+            name: Set("IndexTestInstance".to_string()),
+            kind: Set("claude".to_string()),
+            transport: Set("http".to_string()),
+            endpoint_url: Set("http://127.0.0.1:13285".to_string()),
+            bridge_url: Set(None),
+            secret_token: Set(None),
+            default_cwd: Set("/tmp".to_string()),
+            role: Set("developer".to_string()),
+            role_prompt: Set("Dev prompt".to_string()),
+            created_at: Set(now),
+            updated_at: Set(now),
+        }
+        .insert(&state.db)
+        .await
+        .unwrap_or_else(|e| panic!("failed to insert instance: {e}"));
+
+        let chan = orchestration_channel::ActiveModel {
+            id: Set(Uuid::new_v4()),
+            name: Set("index-test-channel".to_string()),
+            description: Set(Some("Testing indexes".to_string())),
+            participant_ids_json: Set("[]".to_string()),
+            retention_days: Set(7),
+            max_messages: Set(50),
+            created_at: Set(now),
+        }
+        .insert(&state.db)
+        .await
+        .unwrap_or_else(|e| panic!("failed to insert channel: {e}"));
+
+        let msg = channel_message::ActiveModel {
+            id: Set(Uuid::new_v4()),
+            channel_id: Set(chan.id),
+            sender_instance_id: Set(Some(inst.id)),
+            sender_name: Set(inst.name.clone()),
+            recipient_name: Set("@all".to_string()),
+            content: Set("Foreign key test message".to_string()),
+            created_at: Set(now),
+        }
+        .insert(&state.db)
+        .await
+        .unwrap_or_else(|e| panic!("failed to insert message: {e}"));
+
+        // Test SeaORM relation navigation across indexed join
+        let related_channel = msg
+            .find_related(orchestration_channel::Entity)
+            .one(&state.db)
+            .await
+            .unwrap_or_else(|e| panic!("related channel query failed: {e}"))
+            .unwrap_or_else(|| panic!("missing related channel"));
+        assert_eq!(related_channel.id, chan.id);
+
+        let related_instance = msg
+            .find_related(cli_instance::Entity)
+            .one(&state.db)
+            .await
+            .unwrap_or_else(|e| panic!("related instance query failed: {e}"))
+            .unwrap_or_else(|| panic!("missing related instance"));
+        assert_eq!(related_instance.id, inst.id);
+
+        // Test delete instance triggers SetNull on sender_instance_id
+        cli_instance::Entity::delete_by_id(inst.id)
+            .exec(&state.db)
+            .await
+            .unwrap_or_else(|e| panic!("delete instance failed: {e}"));
+
+        let msg_after_inst_del = channel_message::Entity::find_by_id(msg.id)
+            .one(&state.db)
+            .await
+            .unwrap_or_else(|e| panic!("query message failed: {e}"))
+            .unwrap_or_else(|| panic!("message was unexpectedly dropped"));
+        assert_eq!(
+            msg_after_inst_del.sender_instance_id, None,
+            "sender_instance_id should be SET NULL on instance deletion"
+        );
+
+        // Test delete channel triggers CASCADE deletion of messages
+        orchestration_channel::Entity::delete_by_id(chan.id)
+            .exec(&state.db)
+            .await
+            .unwrap_or_else(|e| panic!("delete channel failed: {e}"));
+
+        let msg_after_chan_del = channel_message::Entity::find_by_id(msg.id)
+            .one(&state.db)
+            .await
+            .unwrap_or_else(|e| panic!("query message failed: {e}"));
+        assert!(
+            msg_after_chan_del.is_none(),
+            "channel message should be CASCADE deleted with its channel"
+        );
+    }
+
+    #[tokio::test]
     async fn test_instance_onboarding_and_role_orchestration() {
         let mock_rpc_url = spawn_mock_bridge().await;
         let (base_url, state) = spawn_test_hub("/tmp").await;

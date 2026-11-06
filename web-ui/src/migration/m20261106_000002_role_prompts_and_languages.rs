@@ -77,6 +77,28 @@ impl MigrationTrait for Migration {
             )
             .await?;
 
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_role_prompts_lang")
+                    .table(RolePrompts::Table)
+                    .col(RolePrompts::Lang)
+                    .if_not_exists()
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_role_prompts_role")
+                    .table(RolePrompts::Table)
+                    .col(RolePrompts::Role)
+                    .if_not_exists()
+                    .to_owned(),
+            )
+            .await?;
+
         // 2. Language Packs table
         manager
             .create_table(
