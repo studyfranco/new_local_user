@@ -2862,6 +2862,97 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_multilingual_role_presets_and_onboarding_prompts() {
+        let mock_rpc_url = spawn_mock_bridge().await;
+        let (base_url, state) = spawn_test_hub("/tmp").await;
+        let client = &state.http_client;
+
+        // 1. Verify English presets
+        let en_resp = client
+            .get(format!("{}/api/roles/presets?lang=en", base_url))
+            .send()
+            .await
+            .unwrap_or_else(|e| panic!("en presets failed: {e}"));
+        assert_eq!(en_resp.status(), StatusCode::OK);
+        let en_presets: Vec<Value> = en_resp
+            .json()
+            .await
+            .unwrap_or_else(|e| panic!("en json failed: {e}"));
+        let en_arch = en_presets
+            .iter()
+            .find(|p| p["id"] == "architect")
+            .unwrap_or_else(|| panic!("missing en arch"));
+        assert!(en_arch["label"].as_str().unwrap_or("").contains("Software Architect"));
+        assert!(en_arch["prompt"].as_str().unwrap_or("").contains("Software Architect"));
+
+        // 2. Verify French presets
+        let fr_resp = client
+            .get(format!("{}/api/roles/presets?lang=fr", base_url))
+            .send()
+            .await
+            .unwrap_or_else(|e| panic!("fr presets failed: {e}"));
+        assert_eq!(fr_resp.status(), StatusCode::OK);
+        let fr_presets: Vec<Value> = fr_resp
+            .json()
+            .await
+            .unwrap_or_else(|e| panic!("fr json failed: {e}"));
+        let fr_arch = fr_presets
+            .iter()
+            .find(|p| p["id"] == "architect")
+            .unwrap_or_else(|| panic!("missing fr arch"));
+        assert!(fr_arch["label"].as_str().unwrap_or("").contains("Architecte Logiciel"));
+        assert!(fr_arch["prompt"].as_str().unwrap_or("").contains("Architecte Logiciel"));
+
+        // 3. Register instance and test English onboarding
+        let create_en_resp = client
+            .post(format!("{}/api/instances", base_url))
+            .json(&json!({
+                "name": "EngBot",
+                "kind": "claude",
+                "transport": "http-rpc",
+                "endpoint_url": mock_rpc_url,
+                "bridge_url": mock_rpc_url,
+                "role": "tester"
+            }))
+            .send()
+            .await
+            .unwrap_or_else(|e| panic!("create en inst failed: {e}"));
+        let en_inst_val: Value = create_en_resp.json().await.unwrap_or_else(|e| panic!("json failed: {e}"));
+        let en_inst_id = en_inst_val["id"].as_str().unwrap_or("");
+
+        let onboard_en_resp = client
+            .post(format!("{}/api/instances/{}/onboard", base_url, en_inst_id))
+            .json(&json!({ "channel_name": "testing-channel", "lang": "en" }))
+            .send()
+            .await
+            .unwrap_or_else(|e| panic!("onboard en failed: {e}"));
+        assert_eq!(onboard_en_resp.status(), StatusCode::OK);
+        let onboard_en_json: Value = onboard_en_resp.json().await.unwrap_or_else(|e| panic!("json failed: {e}"));
+        assert!(
+            onboard_en_json["onboarding_prompt"]
+                .as_str()
+                .unwrap_or("")
+                .contains("[AGENT ONBOARDING — SIMPLY AGENT HUB]")
+        );
+
+        // 4. Test French onboarding
+        let onboard_fr_resp = client
+            .post(format!("{}/api/instances/{}/onboard", base_url, en_inst_id))
+            .json(&json!({ "channel_name": "canal-tests", "lang": "fr" }))
+            .send()
+            .await
+            .unwrap_or_else(|e| panic!("onboard fr failed: {e}"));
+        assert_eq!(onboard_fr_resp.status(), StatusCode::OK);
+        let onboard_fr_json: Value = onboard_fr_resp.json().await.unwrap_or_else(|e| panic!("json failed: {e}"));
+        assert!(
+            onboard_fr_json["onboarding_prompt"]
+                .as_str()
+                .unwrap_or("")
+                .contains("[INITIALISATION D'AGENT — SIMPLY AGENT HUB]")
+        );
+    }
+
+    #[tokio::test]
     async fn test_instance_onboarding_and_role_orchestration() {
         let mock_rpc_url = spawn_mock_bridge().await;
         let (base_url, state) = spawn_test_hub("/tmp").await;

@@ -39,3 +39,37 @@ fn app_js_has_no_syntax_errors() {
         errors.join("\n  ")
     );
 }
+
+#[test]
+fn app_js_and_html_have_complete_i18n_support() {
+    let html_path = repo_path("static/index.html");
+    let html = std::fs::read_to_string(&html_path)
+        .unwrap_or_else(|e| panic!("index.html must be readable: {e}"));
+
+    assert!(
+        html.contains("id=\"lang-btn-en\""),
+        "index.html must have #lang-btn-en"
+    );
+    assert!(
+        html.contains("id=\"lang-btn-fr\""),
+        "index.html must have #lang-btn-fr"
+    );
+    assert!(
+        html.contains("onclick=\"setAppLanguage('en')\""),
+        "index.html must have onclick setAppLanguage en"
+    );
+    assert!(
+        html.contains("onclick=\"setAppLanguage('fr')\""),
+        "index.html must have onclick setAppLanguage fr"
+    );
+
+    let js_path = repo_path("static/app.js");
+    let js = std::fs::read_to_string(&js_path)
+        .unwrap_or_else(|e| panic!("app.js must be readable: {e}"));
+
+    assert!(js.contains("const I18N = {"));
+    assert!(js.contains("en: {"));
+    assert!(js.contains("fr: {"));
+    assert!(js.contains("localStorage.getItem(\"agent_hub_lang\")"));
+    assert!(js.contains("window.setAppLanguage"));
+}

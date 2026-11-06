@@ -426,4 +426,153 @@ async fn full_scale_chromium_and_local_instances_e2e() {
         &screenshot_dir.join("chromium_04_git_viewer.png"),
     )
     .await;
+
+    // 7. Dynamic Internationalization (i18n) Switcher Test (EN -> FR -> EN)
+    let fleet_tab_en = cdp_eval(
+        &mut cdp_ws,
+        301,
+        "document.querySelector('[data-tab=\"inventory\"]')?.innerText || ''",
+    )
+    .await;
+    assert!(
+        fleet_tab_en.as_str().unwrap_or("").contains("Fleet"),
+        "Default language should be English, got: {fleet_tab_en}"
+    );
+
+    // Switch to French by clicking the FR button in Chromium
+    let _ = cdp_eval(
+        &mut cdp_ws,
+        302,
+        "document.getElementById('lang-btn-fr')?.click(); true",
+    )
+    .await;
+    sleep(Duration::from_millis(500)).await;
+
+    let fleet_tab_fr = cdp_eval(
+        &mut cdp_ws,
+        303,
+        "document.querySelector('[data-tab=\"inventory\"]')?.innerText || ''",
+    )
+    .await;
+    assert!(
+        fleet_tab_fr
+            .as_str()
+            .unwrap_or("")
+            .contains("Parc de Conteneurs"),
+        "UI should dynamically translate to French, got: {fleet_tab_fr}"
+    );
+
+    let git_btn_fr = cdp_eval(
+        &mut cdp_ws,
+        304,
+        "document.getElementById('btn-git-refresh')?.innerText || ''",
+    )
+    .await;
+    assert!(
+        git_btn_fr.as_str().unwrap_or("").contains("Analyser"),
+        "Git button should translate to French '↻ Analyser', got: {git_btn_fr}"
+    );
+
+    // Screenshot 5: French UI in Chromium
+    save_screenshot(
+        &mut cdp_ws,
+        305,
+        &screenshot_dir.join("chromium_05_i18n_french.png"),
+    )
+    .await;
+
+    // Switch back to English by clicking the EN button in Chromium
+    let _ = cdp_eval(
+        &mut cdp_ws,
+        306,
+        "document.getElementById('lang-btn-en')?.click(); true",
+    )
+    .await;
+    sleep(Duration::from_millis(500)).await;
+
+    let fleet_tab_back = cdp_eval(
+        &mut cdp_ws,
+        307,
+        "document.querySelector('[data-tab=\"inventory\"]')?.innerText || ''",
+    )
+    .await;
+    assert!(
+        fleet_tab_back.as_str().unwrap_or("").contains("Fleet"),
+        "UI should dynamically switch back to English, got: {fleet_tab_back}"
+    );
+
+    // 8. Test Agent Role Selection and Onboarding in Chromium
+    let _ = cdp_eval(&mut cdp_ws, 310, "window.switchTab('console'); true").await;
+    sleep(Duration::from_millis(300)).await;
+
+    // Select the Claude instance in the UI dropdown
+    let _ = cdp_eval(
+        &mut cdp_ws,
+        311,
+        "(() => { const sel = document.getElementById('cli-selector'); const inst = window.state.instances.find(i => i.kind === 'claude'); if (inst) { sel.value = inst.id; sel.dispatchEvent(new Event('change')); return inst.name; } return ''; })()",
+    )
+    .await;
+    sleep(Duration::from_millis(300)).await;
+
+    // Change role in the dropdown to "architect"
+    let _ = cdp_eval(
+        &mut cdp_ws,
+        312,
+        "(() => { const rsel = document.getElementById('cli-role-selector'); rsel.value = 'architect'; rsel.dispatchEvent(new Event('change')); return rsel.value; })()",
+    )
+    .await;
+    sleep(Duration::from_millis(300)).await;
+
+    let prompt_val = cdp_eval(
+        &mut cdp_ws,
+        313,
+        "document.getElementById('cli-role-prompt')?.value || ''",
+    )
+    .await;
+    assert!(
+        prompt_val.as_str().unwrap_or("").contains("Architect"),
+        "Role prompt should auto-populate with the Architect preset instructions"
+    );
+
+    // Click "Initialize Agent" in Chromium
+    let _ = cdp_eval(
+        &mut cdp_ws,
+        314,
+        "document.getElementById('btn-onboard-cli')?.click(); true",
+    )
+    .await;
+    sleep(Duration::from_millis(1000)).await;
+
+    // Screenshot 6: Agent Role & Mission Onboarding in Chromium
+    save_screenshot(
+        &mut cdp_ws,
+        315,
+        &screenshot_dir.join("chromium_06_role_onboarding.png"),
+    )
+    .await;
+
+    // 9. Test Configurable Retention in Chromium
+    let _ = cdp_eval(
+        &mut cdp_ws,
+        320,
+        "window.switchTab('orchestration'); true",
+    )
+    .await;
+    sleep(Duration::from_millis(300)).await;
+
+    let _ = cdp_eval(
+        &mut cdp_ws,
+        321,
+        "(() => { document.getElementById('channel-retention-days').value = '14'; document.getElementById('channel-max-messages').value = '25'; document.getElementById('btn-save-retention')?.click(); return true; })()",
+    )
+    .await;
+    sleep(Duration::from_millis(1000)).await;
+
+    // Screenshot 7: Retention Policy updated in Chromium
+    save_screenshot(
+        &mut cdp_ws,
+        322,
+        &screenshot_dir.join("chromium_07_retention_modal.png"),
+    )
+    .await;
 }
