@@ -1,4 +1,7 @@
+#![recursion_limit = "256"]
+
 pub mod db;
+pub mod defaults;
 pub mod entities;
 pub mod migration;
 
@@ -14,12 +17,12 @@ use axum::{
     },
     http::{HeaderMap, Method, Response, StatusCode},
     response::{Html, IntoResponse},
-    routing::{any, get, post},
+    routing::{any, get, post, put},
     Json, Router,
 };
 use bytes::Bytes;
 use chrono::Utc;
-use entities::{channel_message, cli_instance, orchestration_channel};
+use entities::{channel_message, cli_instance, language_pack, orchestration_channel, role_prompt};
 use futures_util::{SinkExt, StreamExt};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter, QueryOrder,
@@ -365,7 +368,25 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/api/config", get(serve_config))
         .route("/api/status", get(serve_status))
         // CLI Instances CRUD, Roles, Native Terminal & Auth
-        .route("/api/roles/presets", get(list_role_presets))
+        .route(
+            "/api/roles/presets",
+            get(list_role_presets).post(upsert_role_preset),
+        )
+        .route(
+            "/api/roles/presets/{role}",
+            put(update_role_preset_by_role).delete(delete_role_preset_by_role),
+        )
+        // Multilingual Language Packs CRUD (Persisted in DB)
+        .route(
+            "/api/languages",
+            get(list_language_packs).post(upsert_language_pack),
+        )
+        .route(
+            "/api/languages/{lang}",
+            get(get_language_pack)
+                .put(update_language_pack_by_lang)
+                .delete(delete_language_pack_by_lang),
+        )
         .route(
             "/api/instances",
             get(list_instances).post(create_instance),
@@ -650,12 +671,18 @@ async fn create_instance(
         .map(|r| r.trim().to_lowercase())
         .filter(|r| !r.is_empty())
         .unwrap_or_else(|| "developer".to_string());
-    let role_prompt = req
+    let role_prompt = if let Some(p) = req
         .role_prompt
         .as_deref()
         .map(|p| p.trim().to_string())
         .filter(|p| !p.is_empty())
-        .unwrap_or_else(|| db::default_role_prompt(&role).to_string());
+    {
+        p
+    } else {
+        db::get_role_prompt(&state.db, &role, "en")
+            .await
+            .unwrap_or_else(|_| format!("You are the {role} agent."))
+    };
 
     let active = cli_instance::ActiveModel {
         id: Set(Uuid::new_v4()),
@@ -742,7 +769,9 @@ async fn update_instance(
                 .map(|s| s.trim().is_empty())
                 .unwrap_or(true)
             {
-                active.role_prompt = Set(db::default_role_prompt(&r).to_string());
+                active.role_prompt = Set(db::get_role_prompt(&state.db, &r, "en")
+                    .await
+                    .unwrap_or_else(|_| format!("You are the {r} agent.")));
             }
         }
     }
@@ -1315,7 +1344,9 @@ async fn publish_channel_message(
                 continue;
             }
             let role_instruction = if inst.role_prompt.trim().is_empty() {
-                db::default_role_prompt(&inst.role).to_string()
+                db::get_role_prompt(&state.db, &inst.role, "en")
+                    .await
+                    .unwrap_or_else(|_| format!("You are the {} agent.", inst.role))
             } else {
                 inst.role_prompt.clone()
             };
@@ -2231,69 +2262,386 @@ async fn bridge_ws_to_unix(client_ws: WebSocket, unix_stream: UnixStream) {
 }
 
 // ============================================================================
-// ROLES PRESETS & AGENT ONBOARDING (/api/roles/presets, /api/instances/{id}/onboard)
+// ROLES PRESETS & DATABASE PERSISTENCE (/api/roles/presets)
 // ============================================================================
 async fn list_role_presets(
+    State(state): State<Arc<AppState>>,
     Query(query): Query<RolePresetsQuery>,
 ) -> impl IntoResponse {
-    let lang = query.lang.as_deref().unwrap_or("en");
-    let presets = json!([
-        {
-            "id": "architect",
-            "label": match lang {
-                "fr" => "🏗️ Architecte Logiciel",
-                "de" => "🏗️ Software-Architekt",
-                _ => "🏗️ Software Architect",
-            },
-            "prompt": db::default_role_prompt_lang("architect", lang)
-        },
-        {
-            "id": "developer",
-            "label": match lang {
-                "fr" => "💻 Développeur Principal",
-                "de" => "💻 Lead-Entwickler",
-                _ => "💻 Lead Developer",
-            },
-            "prompt": db::default_role_prompt_lang("developer", lang)
-        },
-        {
-            "id": "reviewer",
-            "label": match lang {
-                "fr" => "🔍 Code Reviewer & Qualité",
-                "de" => "🔍 Code-Reviewer & QA",
-                _ => "🔍 Code Reviewer & QA",
-            },
-            "prompt": db::default_role_prompt_lang("reviewer", lang)
-        },
-        {
-            "id": "tester",
-            "label": match lang {
-                "fr" => "🧪 Ingénieur QA & Tests E2E",
-                "de" => "🧪 QA- & E2E-Testingenieur",
-                _ => "🧪 QA & E2E Test Engineer",
-            },
-            "prompt": db::default_role_prompt_lang("tester", lang)
-        },
-        {
-            "id": "security",
-            "label": match lang {
-                "fr" => "🛡️ Auditeur Sécurité & DevSecOps",
-                "de" => "🛡️ Sicherheits- & DevSecOps-Auditor",
-                _ => "🛡️ Security & DevSecOps Auditor",
-            },
-            "prompt": db::default_role_prompt_lang("security", lang)
-        },
-        {
-            "id": "general",
-            "label": match lang {
-                "fr" => "🤖 Agent Polyvalent",
-                "de" => "🤖 Vielseitiger Agent",
-                _ => "🤖 Versatile Agent",
-            },
-            "prompt": db::default_role_prompt_lang("general", lang)
+    let target_lang = query.lang.as_deref().unwrap_or("en");
+
+    let mut presets = match role_prompt::Entity::find()
+        .filter(role_prompt::Column::Lang.eq(target_lang))
+        .order_by_asc(role_prompt::Column::Role)
+        .all(&state.db)
+        .await
+    {
+        Ok(list) => list,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": e.to_string() })),
+            );
         }
-    ]);
-    (StatusCode::OK, Json(presets))
+    };
+
+    if presets.is_empty() && target_lang != "en" {
+        let fallback = role_prompt::Entity::find()
+            .filter(role_prompt::Column::Lang.eq("en"))
+            .order_by_asc(role_prompt::Column::Role)
+            .all(&state.db)
+            .await;
+        if let Ok(fallback_records) = fallback {
+            presets = fallback_records;
+        }
+    }
+
+    let response: Vec<Value> = presets
+        .into_iter()
+        .map(|r| {
+            json!({
+                "id": r.role,
+                "role": r.role,
+                "lang": r.lang,
+                "label": r.label,
+                "prompt": r.prompt,
+                "updated_at": r.updated_at
+            })
+        })
+        .collect();
+
+    (StatusCode::OK, Json(json!(response)))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpsertRolePresetRequest {
+    pub role: String,
+    pub lang: Option<String>,
+    pub label: Option<String>,
+    pub prompt: String,
+}
+
+async fn upsert_role_preset(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<UpsertRolePresetRequest>,
+) -> impl IntoResponse {
+    let role = payload.role.trim().to_lowercase();
+    if role.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "Role name cannot be empty" })),
+        );
+    }
+    let lang = payload
+        .lang
+        .as_deref()
+        .unwrap_or("en")
+        .trim()
+        .to_lowercase();
+    let label = if let Some(l) = payload.label {
+        l
+    } else {
+        db::get_role_label(&state.db, &role, &lang)
+            .await
+            .unwrap_or_else(|_| format!("🤖 {role}"))
+    };
+    let prompt = payload.prompt.trim().to_string();
+    let now = Utc::now();
+
+    let existing = role_prompt::Entity::find()
+        .filter(role_prompt::Column::Role.eq(&role))
+        .filter(role_prompt::Column::Lang.eq(&lang))
+        .one(&state.db)
+        .await;
+
+    match existing {
+        Ok(Some(model)) => {
+            let mut active: role_prompt::ActiveModel = model.into();
+            active.label = Set(label);
+            active.prompt = Set(prompt);
+            active.updated_at = Set(now);
+            match active.update(&state.db).await {
+                Ok(saved) => (
+                    StatusCode::OK,
+                    Json(json!({
+                        "id": saved.role,
+                        "role": saved.role,
+                        "lang": saved.lang,
+                        "label": saved.label,
+                        "prompt": saved.prompt,
+                        "updated_at": saved.updated_at
+                    })),
+                ),
+                Err(e) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({ "error": e.to_string() })),
+                ),
+            }
+        }
+        Ok(None) => {
+            let new_model = role_prompt::ActiveModel {
+                id: Set(Uuid::new_v4()),
+                role: Set(role),
+                lang: Set(lang),
+                label: Set(label),
+                prompt: Set(prompt),
+                created_at: Set(now),
+                updated_at: Set(now),
+            };
+            match new_model.insert(&state.db).await {
+                Ok(saved) => (
+                    StatusCode::CREATED,
+                    Json(json!({
+                        "id": saved.role,
+                        "role": saved.role,
+                        "lang": saved.lang,
+                        "label": saved.label,
+                        "prompt": saved.prompt,
+                        "updated_at": saved.updated_at
+                    })),
+                ),
+                Err(e) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({ "error": e.to_string() })),
+                ),
+            }
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        ),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateRolePresetByRoleRequest {
+    pub lang: Option<String>,
+    pub label: Option<String>,
+    pub prompt: String,
+}
+
+async fn update_role_preset_by_role(
+    State(state): State<Arc<AppState>>,
+    Path(role): Path<String>,
+    Json(payload): Json<UpdateRolePresetByRoleRequest>,
+) -> impl IntoResponse {
+    let req = UpsertRolePresetRequest {
+        role,
+        lang: payload.lang,
+        label: payload.label,
+        prompt: payload.prompt,
+    };
+    upsert_role_preset(State(state), Json(req)).await
+}
+
+async fn delete_role_preset_by_role(
+    State(state): State<Arc<AppState>>,
+    Path(role): Path<String>,
+    Query(query): Query<RolePresetsQuery>,
+) -> impl IntoResponse {
+    let role = role.trim().to_lowercase();
+    let lang = query.lang.as_deref().unwrap_or("en").trim().to_lowercase();
+
+    match role_prompt::Entity::delete_many()
+        .filter(role_prompt::Column::Role.eq(&role))
+        .filter(role_prompt::Column::Lang.eq(&lang))
+        .exec(&state.db)
+        .await
+    {
+        Ok(res) if res.rows_affected > 0 => (
+            StatusCode::OK,
+            Json(json!({ "deleted": true, "role": role, "lang": lang })),
+        ),
+        Ok(_) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": format!("Role preset '{role}' for lang '{lang}' not found") })),
+        ),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        ),
+    }
+}
+
+// ============================================================================
+// MULTILINGUAL LANGUAGE PACKS & DATABASE PERSISTENCE (/api/languages)
+// ============================================================================
+async fn list_language_packs(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    match language_pack::Entity::find().order_by_asc(language_pack::Column::Lang).all(&state.db).await {
+        Ok(list) => {
+            let summary: Vec<Value> = list
+                .into_iter()
+                .map(|p| {
+                    json!({
+                        "id": p.id,
+                        "lang": p.lang,
+                        "name": p.name,
+                        "updated_at": p.updated_at
+                    })
+                })
+                .collect();
+            (StatusCode::OK, Json(json!(summary)))
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        ),
+    }
+}
+
+async fn get_language_pack(
+    State(state): State<Arc<AppState>>,
+    Path(lang): Path<String>,
+) -> impl IntoResponse {
+    let lang = lang.trim().to_lowercase();
+    match language_pack::Entity::find()
+        .filter(language_pack::Column::Lang.eq(&lang))
+        .one(&state.db)
+        .await
+    {
+        Ok(Some(pack)) => {
+            let dict: Value = serde_json::from_str(&pack.dictionary_json).unwrap_or_else(|_| json!({}));
+            (
+                StatusCode::OK,
+                Json(json!({
+                    "id": pack.id,
+                    "lang": pack.lang,
+                    "name": pack.name,
+                    "dictionary": dict,
+                    "updated_at": pack.updated_at
+                })),
+            )
+        }
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": format!("Language pack '{lang}' not found") })),
+        ),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        ),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpsertLanguagePackRequest {
+    pub lang: String,
+    pub name: String,
+    pub dictionary: Value,
+}
+
+async fn upsert_language_pack(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<UpsertLanguagePackRequest>,
+) -> impl IntoResponse {
+    let lang = payload.lang.trim().to_lowercase();
+    if lang.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "Language code cannot be empty" })),
+        );
+    }
+    let name = payload.name.trim().to_string();
+    let dict_str = serde_json::to_string(&payload.dictionary).unwrap_or_else(|_| "{}".to_string());
+    let now = Utc::now();
+
+    let existing = language_pack::Entity::find()
+        .filter(language_pack::Column::Lang.eq(&lang))
+        .one(&state.db)
+        .await;
+
+    match existing {
+        Ok(Some(pack)) => {
+            let mut active: language_pack::ActiveModel = pack.into();
+            active.name = Set(name);
+            active.dictionary_json = Set(dict_str);
+            active.updated_at = Set(now);
+            match active.update(&state.db).await {
+                Ok(saved) => (
+                    StatusCode::OK,
+                    Json(json!({
+                        "id": saved.id,
+                        "lang": saved.lang,
+                        "name": saved.name,
+                        "updated_at": saved.updated_at
+                    })),
+                ),
+                Err(e) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({ "error": e.to_string() })),
+                ),
+            }
+        }
+        Ok(None) => {
+            let new_pack = language_pack::ActiveModel {
+                id: Set(Uuid::new_v4()),
+                lang: Set(lang),
+                name: Set(name),
+                dictionary_json: Set(dict_str),
+                created_at: Set(now),
+                updated_at: Set(now),
+            };
+            match new_pack.insert(&state.db).await {
+                Ok(saved) => (
+                    StatusCode::CREATED,
+                    Json(json!({
+                        "id": saved.id,
+                        "lang": saved.lang,
+                        "name": saved.name,
+                        "updated_at": saved.updated_at
+                    })),
+                ),
+                Err(e) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({ "error": e.to_string() })),
+                ),
+            }
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        ),
+    }
+}
+
+async fn update_language_pack_by_lang(
+    State(state): State<Arc<AppState>>,
+    Path(lang): Path<String>,
+    Json(payload): Json<Value>,
+) -> impl IntoResponse {
+    let name = payload["name"].as_str().unwrap_or("").to_string();
+    let dictionary = payload.get("dictionary").cloned().unwrap_or_else(|| json!({}));
+    let req = UpsertLanguagePackRequest {
+        lang,
+        name: if name.is_empty() { "Language".to_string() } else { name },
+        dictionary,
+    };
+    upsert_language_pack(State(state), Json(req)).await
+}
+
+async fn delete_language_pack_by_lang(
+    State(state): State<Arc<AppState>>,
+    Path(lang): Path<String>,
+) -> impl IntoResponse {
+    let lang = lang.trim().to_lowercase();
+    match language_pack::Entity::delete_many()
+        .filter(language_pack::Column::Lang.eq(&lang))
+        .exec(&state.db)
+        .await
+    {
+        Ok(res) if res.rows_affected > 0 => (
+            StatusCode::OK,
+            Json(json!({ "deleted": true, "lang": lang })),
+        ),
+        Ok(_) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": format!("Language pack '{lang}' not found") })),
+        ),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        ),
+    }
 }
 
 async fn onboard_instance_handler(
@@ -2315,16 +2663,15 @@ async fn onboard_instance_handler(
 
     let channel_name = req.channel_name.unwrap_or_else(|| "general".to_string());
     let lang = req.lang.as_deref().unwrap_or("en");
-    let base_role_prompt = req
-        .custom_prompt
-        .filter(|s| !s.trim().is_empty())
-        .unwrap_or_else(|| {
-            if inst.role_prompt.trim().is_empty() {
-                db::default_role_prompt_lang(&inst.role, lang).to_string()
-            } else {
-                inst.role_prompt.clone()
-            }
-        });
+    let base_role_prompt = if let Some(p) = req.custom_prompt.filter(|s| !s.trim().is_empty()) {
+        p
+    } else if !inst.role_prompt.trim().is_empty() {
+        inst.role_prompt.clone()
+    } else {
+        db::get_role_prompt(&state.db, &inst.role, lang)
+            .await
+            .unwrap_or_else(|_| format!("You are the {} agent.", inst.role))
+    };
 
     let onboarding_prompt = match lang {
         "fr" => format!(
@@ -3012,6 +3359,191 @@ mod tests {
                 .as_str()
                 .unwrap_or("")
                 .contains("[AGENTEN-ONBOARDING — SIMPLY AGENT HUB]")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_role_prompts_and_language_packs_database_persistence_and_autohealing() {
+        let (base_url, state) = spawn_test_hub("/tmp").await;
+        let client = &state.http_client;
+
+        // 1. Database persistence: role_prompts table must have canonical roles pre-seeded
+        let all_prompts = role_prompt::Entity::find()
+            .all(&state.db)
+            .await
+            .unwrap_or_else(|e| panic!("failed to query role_prompts: {e}"));
+        // 6 canonical roles * 3 languages (en, fr, de) = 18 minimum
+        assert!(all_prompts.len() >= 18);
+
+        let en_architect = role_prompt::Entity::find()
+            .filter(role_prompt::Column::Role.eq("architect"))
+            .filter(role_prompt::Column::Lang.eq("en"))
+            .one(&state.db)
+            .await
+            .unwrap_or_else(|e| panic!("failed to find en architect: {e}"))
+            .unwrap_or_else(|| panic!("en architect not found in DB"));
+        assert!(en_architect.label.contains("Software Architect"));
+        assert!(en_architect.prompt.contains("Software Architect"));
+
+        // 2. Database persistence: language_packs table must contain en, fr, de
+        let all_lang_packs = language_pack::Entity::find()
+            .all(&state.db)
+            .await
+            .unwrap_or_else(|e| panic!("failed to query language_packs: {e}"));
+        assert!(all_lang_packs.len() >= 3);
+        let langs: Vec<String> = all_lang_packs.iter().map(|p| p.lang.clone()).collect();
+        assert!(langs.contains(&"en".to_string()));
+        assert!(langs.contains(&"fr".to_string()));
+        assert!(langs.contains(&"de".to_string()));
+
+        // 3. Auto-healing test: delete a prompt from DB and call defaults::get_or_create_role_prompt
+        let deleted = role_prompt::Entity::delete_many()
+            .filter(role_prompt::Column::Role.eq("tester"))
+            .filter(role_prompt::Column::Lang.eq("de"))
+            .exec(&state.db)
+            .await
+            .unwrap_or_else(|e| panic!("delete failed: {e}"));
+        assert_eq!(deleted.rows_affected, 1);
+
+        // Verify it was removed
+        let missing = role_prompt::Entity::find()
+            .filter(role_prompt::Column::Role.eq("tester"))
+            .filter(role_prompt::Column::Lang.eq("de"))
+            .one(&state.db)
+            .await
+            .unwrap_or_else(|e| panic!("query failed: {e}"));
+        assert!(missing.is_none());
+
+        // Call auto-healing get_or_create_role_prompt
+        let healed_prompt = defaults::get_or_create_role_prompt(&state.db, "tester", "de")
+            .await
+            .unwrap_or_else(|e| panic!("heal failed: {e}"));
+        assert!(healed_prompt.contains("Testingenieur"));
+
+        // Verify the database record was auto-recreated
+        let restored = role_prompt::Entity::find()
+            .filter(role_prompt::Column::Role.eq("tester"))
+            .filter(role_prompt::Column::Lang.eq("de"))
+            .one(&state.db)
+            .await
+            .unwrap_or_else(|e| panic!("query failed: {e}"))
+            .unwrap_or_else(|| panic!("restored prompt not found"));
+        assert_eq!(restored.prompt, healed_prompt);
+
+        let healed_label = defaults::get_or_create_role_label(&state.db, "tester", "de")
+            .await
+            .unwrap_or_else(|e| panic!("heal label failed: {e}"));
+        assert!(healed_label.contains("Testingenieur"));
+
+        // 4. API test: Upsert custom role preset (POST /api/roles/presets)
+        let custom_prompt_text = "You are a specialized Kubernetes SRE Architect.";
+        let upsert_resp = client
+            .post(format!("{}/api/roles/presets", base_url))
+            .json(&json!({
+                "role": "architect",
+                "lang": "en",
+                "label": "🏗️ SRE Architect",
+                "prompt": custom_prompt_text
+            }))
+            .send()
+            .await
+            .unwrap_or_else(|e| panic!("post preset failed: {e}"));
+        assert_eq!(upsert_resp.status(), StatusCode::OK);
+
+        // Verify in DB
+        let updated_in_db = role_prompt::Entity::find()
+            .filter(role_prompt::Column::Role.eq("architect"))
+            .filter(role_prompt::Column::Lang.eq("en"))
+            .one(&state.db)
+            .await
+            .unwrap_or_else(|e| panic!("query failed: {e}"))
+            .unwrap_or_else(|| panic!("updated record not found in DB"));
+        assert_eq!(updated_in_db.prompt, custom_prompt_text);
+
+        // Verify via GET /api/roles/presets?lang=en
+        let get_presets_resp = client
+            .get(format!("{}/api/roles/presets?lang=en", base_url))
+            .send()
+            .await
+            .unwrap_or_else(|e| panic!("get presets failed: {e}"));
+        let presets_json: Vec<Value> = get_presets_resp
+            .json()
+            .await
+            .unwrap_or_else(|e| panic!("json failed: {e}"));
+        let arch_preset = presets_json
+            .iter()
+            .find(|p| p["role"] == "architect")
+            .unwrap_or_else(|| panic!("architect not found in presets response"));
+        assert_eq!(arch_preset["prompt"], custom_prompt_text);
+
+        // 5. Fallback test: Requesting role presets for unknown language falls back to English
+        let unknown_lang_resp = client
+            .get(format!("{}/api/roles/presets?lang=unknown_lang", base_url))
+            .send()
+            .await
+            .unwrap_or_else(|e| panic!("get unknown lang presets failed: {e}"));
+        let fallback_presets: Vec<Value> = unknown_lang_resp
+            .json()
+            .await
+            .unwrap_or_else(|e| panic!("json failed: {e}"));
+        assert!(!fallback_presets.is_empty());
+        let fallback_arch = fallback_presets
+            .iter()
+            .find(|p| p["role"] == "architect")
+            .unwrap_or_else(|| panic!("architect not found in fallback"));
+        assert_eq!(fallback_arch["prompt"], custom_prompt_text);
+
+        // 6. Language packs API: GET /api/languages, POST /api/languages, GET /api/languages/es
+        let lang_list_resp = client
+            .get(format!("{}/api/languages", base_url))
+            .send()
+            .await
+            .unwrap_or_else(|e| panic!("get languages failed: {e}"));
+        assert_eq!(lang_list_resp.status(), StatusCode::OK);
+        let lang_list: Vec<Value> = lang_list_resp
+            .json()
+            .await
+            .unwrap_or_else(|e| panic!("json failed: {e}"));
+        let lang_codes: Vec<&str> = lang_list
+            .iter()
+            .filter_map(|l| l["lang"].as_str())
+            .collect();
+        assert!(lang_codes.contains(&"en"));
+        assert!(lang_codes.contains(&"fr"));
+        assert!(lang_codes.contains(&"de"));
+
+        // Create new language pack (Spanish)
+        let create_es_resp = client
+            .post(format!("{}/api/languages", base_url))
+            .json(&json!({
+                "lang": "es",
+                "name": "Español",
+                "dictionary": {
+                    "fleet_title": "Flota de Contenedores",
+                    "retention_title": "Retención Configurable"
+                }
+            }))
+            .send()
+            .await
+            .unwrap_or_else(|e| panic!("post es language failed: {e}"));
+        assert_eq!(create_es_resp.status(), StatusCode::CREATED);
+
+        // Verify retrieval via GET /api/languages/es
+        let get_es_resp = client
+            .get(format!("{}/api/languages/es", base_url))
+            .send()
+            .await
+            .unwrap_or_else(|e| panic!("get es failed: {e}"));
+        assert_eq!(get_es_resp.status(), StatusCode::OK);
+        let es_pack: Value = get_es_resp
+            .json()
+            .await
+            .unwrap_or_else(|e| panic!("json failed: {e}"));
+        assert_eq!(es_pack["lang"], "es");
+        assert_eq!(es_pack["name"], "Español");
+        assert_eq!(
+            es_pack["dictionary"]["fleet_title"],
+            "Flota de Contenedores"
         );
     }
 

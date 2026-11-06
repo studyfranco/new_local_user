@@ -87,6 +87,7 @@
                         </div>
                         <div class="btn-row">
                             <button id="btn-save-role" class="btn btn-secondary btn-sm" data-i18n="btnSaveRole">💾 Save Role</button>
+                            <button id="btn-save-role-template" class="btn btn-secondary btn-sm" data-i18n="btnSaveRoleTemplate" title="Save this prompt as template in database for this role">💾 Save to DB</button>
                             <button id="btn-onboard-cli" class="btn btn-primary btn-sm" title="Immediately send this identity prompt to the CLI" data-i18n="btnOnboardCli">🎭 Initialize Agent</button>
                         </div>
                     </div>
@@ -120,7 +121,7 @@
                             </select>
                         </div>
                         <div class="form-group">
-                            <label for="cli-form-transport">Transport</label>
+                            <label for="cli-form-transport" data-i18n="thTransport">Transport</label>
                             <select id="cli-form-transport" class="input-field">
                                 <option value="ws">WebSocket (ws://...)</option>
                                 <option value="unix">Unix Socket (/run/...)</option>
@@ -129,7 +130,7 @@
                             </select>
                         </div>
                         <div class="form-group">
-                            <label for="cli-form-endpoint">URL / Socket Endpoint</label>
+                            <label for="cli-form-endpoint" data-i18n="thEndpoint">URL / Socket Endpoint</label>
                             <input id="cli-form-endpoint" type="text" class="input-field mono" placeholder="ws://codex-2:4500 or http://antigravity-2:3286/rpc">
                         </div>
                         <div class="form-group">
@@ -412,7 +413,7 @@
                                 <th data-i18n="thRole">Assigned Role</th>
                                 <th data-i18n="thTransport">Transport</th>
                                 <th data-i18n="thEndpoint">Endpoint</th>
-                                <th>CWD</th>
+                                <th data-i18n="thCwd">CWD</th>
                                 <th data-i18n="thStatus">Status</th>
                                 <th data-i18n="thActions">Actions</th>
                             </tr>

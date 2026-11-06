@@ -23,6 +23,8 @@
             roleInCollectiveLabel: "Role in collective",
             rolePromptLabel: "Role Prompt (suggested default / customizable)",
             btnSaveRole: "💾 Save Role",
+            btnSaveRoleTemplate: "💾 Save to DB",
+            roleTemplateSaved: (role) => `Role prompt template for "${role}" saved in database.`,
             btnOnboardCli: "🎭 Initialize Agent",
             addCliFormTitle: "Add CLI Container",
             editCliFormTitle: (name) => `Rename / Edit "${name}"`,
@@ -96,6 +98,7 @@
             thRole: "Assigned Role",
             thTransport: "Transport",
             thEndpoint: "Endpoint",
+            thCwd: "CWD",
             thStatus: "Status",
             thActions: "Actions",
             rpcTitle: "JSON-RPC 2.0 Frame Inspector & Orchestration Bus",
@@ -152,6 +155,8 @@
             roleInCollectiveLabel: "Rôle dans le collectif",
             rolePromptLabel: "Prompt de rôle (par défaut proposé / paramétrable)",
             btnSaveRole: "💾 Sauver le rôle",
+            btnSaveRoleTemplate: "💾 Enregistrer en base",
+            roleTemplateSaved: (role) => `Template de prompt pour « ${role} » sauvegardé en base de données.`,
             btnOnboardCli: "🎭 Initialiser l'agent",
             addCliFormTitle: "Ajouter un conteneur CLI",
             editCliFormTitle: (name) => `Renommer / Modifier « ${name} »`,
@@ -225,6 +230,7 @@
             thRole: "Rôle attribué",
             thTransport: "Transport",
             thEndpoint: "Endpoint",
+            thCwd: "Dossier CWD",
             thStatus: "État",
             thActions: "Actions",
             rpcTitle: "Inspecteur de trames JSON-RPC 2.0 & Bus d'Orchestration",
@@ -281,6 +287,8 @@
             roleInCollectiveLabel: "Rolle im Kollektiv",
             rolePromptLabel: "Rollen-Prompt (vorgeschlagen / anpassbar)",
             btnSaveRole: "💾 Rolle speichern",
+            btnSaveRoleTemplate: "💾 In DB speichern",
+            roleTemplateSaved: (role) => `Rollen-Prompt-Vorlage für "${role}" in Datenbank gespeichert.`,
             btnOnboardCli: "🎭 Agent initialisieren",
             addCliFormTitle: "CLI-Container hinzufügen",
             editCliFormTitle: (name) => `"${name}" umbenennen / bearbeiten`,
@@ -354,6 +362,7 @@
             thRole: "Zugewiesene Rolle",
             thTransport: "Transport",
             thEndpoint: "Endpunkt",
+            thCwd: "Arbeitsverzeichnis (CWD)",
             thStatus: "Status",
             thActions: "Aktionen",
             rpcTitle: "JSON-RPC 2.0 Frame-Inspektor & Orchestrierungsbus",
@@ -392,8 +401,15 @@
     };
 
     function t(key, ...args) {
-        const dict = I18N[currentLang] || I18N.en;
-        const entry = dict[key] ?? I18N.en[key] ?? key;
+        const dict = I18N[currentLang] || I18N.en || {};
+        let entry = dict[key];
+        // Default to English whenever no associated value is defined
+        if (entry === undefined || entry === null || entry === "") {
+            entry = I18N.en ? I18N.en[key] : key;
+        }
+        if (entry === undefined || entry === null) {
+            entry = key;
+        }
         if (typeof entry === "function") {
             return entry(...args);
         }
@@ -691,6 +707,31 @@
                 inst.name,
                 t("roleSaved", role)
             );
+        }
+    });
+
+    $("btn-save-role-template")?.addEventListener("click", async () => {
+        const role = $("cli-role-selector")?.value || "developer";
+        const prompt = $("cli-role-prompt")?.value.trim() || "";
+        const sel = $("cli-role-selector");
+        const label = sel?.options[sel.selectedIndex]?.textContent || role;
+        try {
+            const resp = await fetch("/api/roles/presets", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    role,
+                    lang: currentLang,
+                    label,
+                    prompt,
+                }),
+            });
+            if (resp.ok) {
+                await loadRolePresets();
+                appendMsg("console-messages", "system", "Database", t("roleTemplateSaved", role));
+            }
+        } catch (err) {
+            console.error("Failed to save role prompt template in database:", err);
         }
     });
 
@@ -1907,11 +1948,48 @@
     window.renderLanguageSwitcher = renderLanguageSwitcher;
     window.I18N = I18N;
 
+    async function loadLanguagePacksFromDb() {
+        try {
+            const resp = await fetch("/api/languages");
+            if (!resp.ok) return;
+            const list = await resp.json();
+            if (Array.isArray(list)) {
+                for (const item of list) {
+                    if (item.lang && !I18N[item.lang]) {
+                        try {
+                            const dResp = await fetch(`/api/languages/${encodeURIComponent(item.lang)}`);
+                            if (dResp.ok) {
+                                const pack = await dResp.json();
+                                if (pack && pack.dictionary) {
+                                    I18N[item.lang] = { ...(I18N.en || {}), ...pack.dictionary };
+                                }
+                            }
+                        } catch {
+                            // ignore
+                        }
+                    }
+                }
+                renderLanguageSwitcher();
+            }
+        } catch {
+            // ignore
+        }
+    }
+
     window.registerLanguagePack = function (code, dictionary) {
         if (!code || typeof code !== "string" || !dictionary) return;
         const short = code.toLowerCase().trim();
         I18N[short] = { ...(I18N.en || {}), ...dictionary };
         renderLanguageSwitcher();
+        fetch("/api/languages", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                lang: short,
+                name: short.toUpperCase(),
+                dictionary: dictionary,
+            }),
+        }).catch(() => {});
     };
 
     window.setAppLanguage = function (lang) {
@@ -1986,6 +2064,7 @@
         toggleSidebar(false);
     }
 
+    loadLanguagePacksFromDb();
     loadRolePresets()
         .then(loadInstances)
         .then(loadChannels);

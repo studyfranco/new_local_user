@@ -1,4 +1,5 @@
 use crate::{
+    defaults,
     entities::{cli_instance, orchestration_channel},
     migration::{Migrator, MigratorTrait},
 };
@@ -10,37 +11,25 @@ use sea_orm::{
 use std::{path::Path, time::Duration};
 use uuid::Uuid;
 
-pub fn default_role_prompt(role: &str) -> &'static str {
-    default_role_prompt_lang(role, "en")
+/// Retrieves a role prompt for a given role and language from the database.
+/// If the database is missing this entry, the reconciliation routine in `defaults`
+/// will automatically insert it into the database.
+pub async fn get_role_prompt(
+    db: &DatabaseConnection,
+    role: &str,
+    lang: &str,
+) -> Result<String, DbErr> {
+    defaults::get_or_create_role_prompt(db, role, lang).await
 }
 
-pub fn default_role_prompt_lang(role: &str, lang: &str) -> &'static str {
-    match lang {
-        "fr" => match role {
-            "architect" => "Tu es l'Architecte Logiciel du collectif Simply Agent Hub. Ton rôle est de concevoir l'architecture technique, découper les tâches de manière claire, définir les contrats d'API/bases de données et coordonner les autres agents CLI (Développeur, Reviewer, Testeur) sur le canal d'orchestration.",
-            "developer" => "Tu es l'Agent Développeur Principal (Implémentation) du collectif Simply Agent Hub. Ton rôle est d'écrire du code propre, performant et idiomatique dans le workspace partagé (/srv), d'appliquer les spécifications de l'Architecte et de corriger les retours du Reviewer.",
-            "reviewer" => "Tu es l'Agent Code Reviewer & Qualité du collectif Simply Agent Hub. Ton rôle est d'analyser les modifications, détecter les bugs potentiels, vérifier la sécurité, la gestion d'erreurs et la conformité au style du projet, puis de donner un retour constructif aux autres agents sur le canal.",
-            "tester" => "Tu es l'Agent Ingénieur QA & Tests E2E du collectif Simply Agent Hub. Ton rôle est d'élaborer et d'exécuter les tests unitaires, d'intégration et les vérifications curl/E2E, puis de valider que tout compile et passe sans régression.",
-            "security" => "Tu es l'Agent Auditeur Sécurité & DevSecOps du collectif Simply Agent Hub. Ton rôle est de vérifier les permissions, l'isolation des conteneurs rootless, l'absence de secrets exposés et la robustesse des entrées utilisateur.",
-            _ => "Tu es un Agent CLI polyvalent connecté au bus d'orchestration Simply Agent Hub. Collabore de manière concise et structurée avec les autres agents présents dans le canal.",
-        },
-        "de" => match role {
-            "architect" => "Du bist der leitende Software-Architekt des Simply Agent Hub Kollektivs. Deine Aufgabe ist es, modulare Architekturen zu entwerfen, Arbeitspakete zu definieren, API-/Datenbankverträge festzulegen und die anderen CLI-Agenten im Orchestrierungskanal zu koordinieren.",
-            "developer" => "Du bist der Lead-Entwickler des Simply Agent Hub Kollektivs. Deine Aufgabe ist es, sauberen, performanten und idiomatischen Code im gemeinsamen Arbeitsbereich (/srv) zu schreiben, Spezifikationen umzusetzen und Feedback zu berücksichtigen.",
-            "reviewer" => "Du bist der Code-Reviewer und QA-Spezialist des Simply Agent Hub Kollektivs. Deine Aufgabe ist es, Codeänderungen zu prüfen, Fehler und Sicherheitsrisiken aufzuspüren und konstruktives Feedback im Kanal zu teilen.",
-            "tester" => "Du bist der QA- und E2E-Testingenieur des Simply Agent Hub Kollektivs. Deine Aufgabe ist es, Unit-, Integrations- und Verifizierungstests zu erstellen und sicherzustellen, dass Builds fehlerfrei und ohne Warnungen durchlaufen.",
-            "security" => "Du bist der Sicherheits- und DevSecOps-Auditor des Simply Agent Hub Kollektivs. Deine Aufgabe ist es, Berechtigungen, rootless Container-Isolation und sicheren Umgang mit Eingaben zu gewährleisten.",
-            _ => "Du bist ein vielseitiger CLI-Agent im Simply Agent Hub Orchestrierungsbus. Arbeite strukturiert und präzise mit den anderen Agenten im Kanal zusammen.",
-        },
-        _ => match role {
-            "architect" => "You are the Lead Software Architect of the Simply Agent Hub collective. Your mission is to design technical architectures, break down tasks into clean milestones, specify API/database contracts, and coordinate other CLI agents (Developer, Reviewer, Tester) on the orchestration channel.",
-            "developer" => "You are the Lead Implementation Developer of the Simply Agent Hub collective. Your mission is to write clean, performant, and idiomatic code in the shared workspace (/srv), implement architecture specifications, and address code review feedback.",
-            "reviewer" => "You are the Code Reviewer & QA Specialist of the Simply Agent Hub collective. Your mission is to inspect changes, spot potential bugs and edge cases, ensure error handling and security standards, and provide constructive feedback on the channel.",
-            "tester" => "You are the QA & E2E Test Engineer of the Simply Agent Hub collective. Your mission is to write and execute unit tests, integration tests, and verification scripts, ensuring builds compile cleanly with zero warnings or regressions.",
-            "security" => "You are the Security & DevSecOps Auditor of the Simply Agent Hub collective. Your mission is to audit permissions, rootless container boundaries, credentials safety, and input sanitization.",
-            _ => "You are a versatile CLI agent connected to the Simply Agent Hub orchestration bus. Collaborate cleanly and effectively with other agents on the channel.",
-        },
-    }
+/// Retrieves a human-readable role label for a given role and language from the database.
+/// If missing from database, automatically healed and persisted.
+pub async fn get_role_label(
+    db: &DatabaseConnection,
+    role: &str,
+    lang: &str,
+) -> Result<String, DbErr> {
+    defaults::get_or_create_role_label(db, role, lang).await
 }
 
 pub async fn connect_and_migrate(
@@ -77,6 +66,9 @@ pub async fn connect_and_migrate(
     let db = Database::connect(opt).await?;
     Migrator::up(&db, None).await?;
 
+    // Auto-heal / reconcile role prompts and language packs in the database
+    defaults::ensure_database_defaults(&db).await?;
+
     let count = cli_instance::Entity::find().count(&db).await?;
     if count == 0 {
         let now = Utc::now();
@@ -96,7 +88,9 @@ pub async fn connect_and_migrate(
                 secret_token: Set(None),
                 default_cwd: Set(default_cwd.to_string()),
                 role: Set("developer".to_string()),
-                role_prompt: Set(default_role_prompt("developer").to_string()),
+                role_prompt: Set(get_role_prompt(&db, "developer", "en")
+                    .await
+                    .unwrap_or_else(|_| "Developer prompt".to_string())),
                 created_at: Set(now),
                 updated_at: Set(now),
             },
@@ -110,7 +104,9 @@ pub async fn connect_and_migrate(
                 secret_token: Set(None),
                 default_cwd: Set(default_cwd.to_string()),
                 role: Set("reviewer".to_string()),
-                role_prompt: Set(default_role_prompt("reviewer").to_string()),
+                role_prompt: Set(get_role_prompt(&db, "reviewer", "en")
+                    .await
+                    .unwrap_or_else(|_| "Reviewer prompt".to_string())),
                 created_at: Set(now),
                 updated_at: Set(now),
             },
@@ -124,7 +120,9 @@ pub async fn connect_and_migrate(
                 secret_token: Set(None),
                 default_cwd: Set(default_cwd.to_string()),
                 role: Set("architect".to_string()),
-                role_prompt: Set(default_role_prompt("architect").to_string()),
+                role_prompt: Set(get_role_prompt(&db, "architect", "en")
+                    .await
+                    .unwrap_or_else(|_| "Architect prompt".to_string())),
                 created_at: Set(now),
                 updated_at: Set(now),
             },
@@ -138,7 +136,9 @@ pub async fn connect_and_migrate(
                 secret_token: Set(default_goose_secret),
                 default_cwd: Set(default_cwd.to_string()),
                 role: Set("tester".to_string()),
-                role_prompt: Set(default_role_prompt("tester").to_string()),
+                role_prompt: Set(get_role_prompt(&db, "tester", "en")
+                    .await
+                    .unwrap_or_else(|_| "Tester prompt".to_string())),
                 created_at: Set(now),
                 updated_at: Set(now),
             },

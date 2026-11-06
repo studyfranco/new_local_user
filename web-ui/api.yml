@@ -83,12 +83,12 @@ paths:
                   type: boolean
 
   # ==========================================================================
-  # Role Presets
+  # Role Presets (SeaORM role_prompts persistence & auto-healing)
   # ==========================================================================
   /api/roles/presets:
     get:
       summary: List role presets
-      description: Returns pre-packaged agent roles and their customizable prompt templates in English or French.
+      description: Returns pre-packaged agent roles and their customizable prompt templates from the database in English, French, German, or fallback language.
       parameters:
         - in: query
           name: lang
@@ -106,6 +106,156 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/RolePreset'
+    post:
+      summary: Upsert a role prompt preset in database
+      description: Persists or updates a customized role prompt template in the SeaORM role_prompts table.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertRolePresetRequest'
+      responses:
+        "200":
+          description: Role preset updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RolePreset'
+        "201":
+          description: Role preset created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RolePreset'
+
+  /api/roles/presets/{role}:
+    parameters:
+      - in: path
+        name: role
+        required: true
+        schema:
+          type: string
+        description: Unique role identifier (e.g. architect, developer, reviewer, tester, security, general).
+    put:
+      summary: Update a role prompt template
+      description: Updates the system prompt or label for an existing role preset in the database.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertRolePresetRequest'
+      responses:
+        "200":
+          description: Role preset updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RolePreset'
+    delete:
+      summary: Delete a custom role prompt preset
+      description: Removes a custom role prompt from the database.
+      parameters:
+        - in: query
+          name: lang
+          schema:
+            type: string
+            default: en
+          description: Language code for the role preset to remove.
+      responses:
+        "200":
+          description: Role preset removed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+
+  # ==========================================================================
+  # Dynamic Language Packs (SeaORM language_packs persistence)
+  # ==========================================================================
+  /api/languages:
+    get:
+      summary: List all registered language packs
+      description: Retrieves all available language packs (en, fr, de, and custom) persisted in the SeaORM language_packs database table.
+      responses:
+        "200":
+          description: List of language packs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/LanguagePack'
+    post:
+      summary: Install or register a new language pack
+      description: Persists a complete i18n dictionary for a language code into the database.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertLanguagePackRequest'
+      responses:
+        "201":
+          description: Language pack installed and saved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LanguagePack'
+
+  /api/languages/{lang}:
+    parameters:
+      - in: path
+        name: lang
+        required: true
+        schema:
+          type: string
+        description: ISO language code (e.g. en, fr, de, es, it).
+    get:
+      summary: Get full language pack and dictionary
+      description: Returns the full translation dictionary for the specified language.
+      responses:
+        "200":
+          description: Language pack details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LanguagePack'
+        "404":
+          description: Language pack not found
+    put:
+      summary: Update language pack dictionary
+      description: Updates the name or translations in an existing language pack.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertLanguagePackRequest'
+      responses:
+        "200":
+          description: Language pack updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LanguagePack'
+    delete:
+      summary: Delete a custom language pack
+      description: Deletes a non-canonical language pack from the database.
+      responses:
+        "200":
+          description: Language pack deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
 
   # ==========================================================================
   # CLI Container Fleet (SeaORM CRUD)
@@ -648,12 +798,79 @@ components:
         id:
           type: string
           example: architect
+        role:
+          type: string
+          example: architect
+        lang:
+          type: string
+          example: en
         label:
           type: string
           example: "🏗️ Software Architect"
         prompt:
           type: string
           description: Default role system prompt.
+        updated_at:
+          type: string
+          format: date-time
+
+    UpsertRolePresetRequest:
+      type: object
+      required:
+        - role
+        - prompt
+      properties:
+        role:
+          type: string
+          example: architect
+        lang:
+          type: string
+          example: en
+        label:
+          type: string
+          example: "🏗️ Chief Architect"
+        prompt:
+          type: string
+          example: "You are the Chief Software Architect."
+
+    LanguagePack:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        lang:
+          type: string
+          example: en
+        name:
+          type: string
+          example: "English (Default)"
+        dictionary:
+          type: object
+          description: Complete key-value dictionary for i18n translations.
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    UpsertLanguagePackRequest:
+      type: object
+      required:
+        - lang
+        - name
+        - dictionary
+      properties:
+        lang:
+          type: string
+          example: es
+        name:
+          type: string
+          example: "Español"
+        dictionary:
+          type: object
+          description: Key-value translations matching UI dictionary keys.
 
     Instance:
       type: object

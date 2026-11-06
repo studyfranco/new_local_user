@@ -80,6 +80,10 @@ fn app_js_and_html_have_complete_i18n_support() {
         "index.html must have #settings-modal for settings and language switching"
     );
     assert!(
+        html.contains("id=\"btn-save-role-template\""),
+        "index.html must have #btn-save-role-template to persist custom role prompts to DB"
+    );
+    assert!(
         !html.contains("Container Fleet (SeaORM)"),
         "index.html must not expose internal technical SeaORM label in Container Fleet tab"
     );
@@ -116,6 +120,9 @@ fn openapi_spec_exists_and_covers_endpoints() {
     assert!(content.contains("/api/instances:"));
     assert!(content.contains("/ws/instances/{id}/terminal:"));
     assert!(content.contains("/api/roles/presets:"));
+    assert!(content.contains("/api/roles/presets/{role}:"));
+    assert!(content.contains("/api/languages:"));
+    assert!(content.contains("/api/languages/{lang}:"));
     assert!(content.contains("/api/orchestration/channels:"));
     assert!(content.contains("/api/orchestration/channels/{id}/messages:"));
     assert!(content.contains("/api/orchestration/channels/{id}/prune:"));

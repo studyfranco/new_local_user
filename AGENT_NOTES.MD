@@ -100,6 +100,29 @@
     - DE: `Container-Flotte`, `Konfigurierbare Aufbewahrung`, `Registrierte CLI-Container-Flotte`
   - **Automated Verification**: Updated `frontend_syntax_test.rs` and `chromium_full_scale_test.rs` to open the modal via `#btn-open-settings`, assert that labels translate dynamically without any remaining "SeaORM" substrings, and captured screenshot artifact `chromium_13_settings_modal.png`.
 
+#### 8. Database Persistence of Role Prompts & Language Packs with Startup Auto-Healing & English Fallback
+* **Finding**: Default role prompts and UI dictionaries were originally embedded as hardcoded Rust match expressions in application code (`default_role_prompt_lang`, `default_lang_dict_*`). If the database was partially initialized or custom roles/languages were added dynamically, the system could not persist modifications or heal missing defaults without code recompilation.
+* **Resolution**:
+  - **SeaORM Entities & Migration**:
+    - Created `web-ui/src/entities/role_prompt.rs` (table `role_prompts` with columns `id`, `role`, `lang`, `label`, `prompt`, `created_at`, `updated_at`, and a unique compound index on `(role, lang)`).
+    - Created `web-ui/src/entities/language_pack.rs` (table `language_packs` with columns `id`, `lang`, `name`, `dictionary_json`, `created_at`, `updated_at`, and a unique index on `lang`).
+    - Added migration `m20261106_000002_role_prompts_and_languages.rs` creating both tables idempotently.
+  - **Startup Reconciliation & Self-Healing (`defaults.rs`)**:
+    - Authored dedicated module [`web-ui/src/defaults.rs`](web-ui/src/defaults.rs) holding canonical role prompts and full JSON dictionaries for `en`, `fr`, `de`.
+    - Implemented `ensure_database_defaults(&db)` called at application launch inside `db::connect_and_migrate`. It inspects all canonical definitions and automatically inserts any missing records without overwriting customized user data.
+    - Implemented `get_or_create_role_prompt(&db, role, lang)` and `get_or_create_role_label(&db, role, lang)` providing runtime self-healing: if an entry is missing from DB, it automatically writes the canonical default to the database.
+  - **REST API Endpoints**:
+    - `GET /api/roles/presets` (queries `role_prompts` in DB, with automatic English fallback when an unknown language is requested).
+    - `POST /api/roles/presets`, `PUT /api/roles/presets/{role}`, `DELETE /api/roles/presets/{role}` for runtime database updates.
+    - `GET /api/languages`, `POST /api/languages`, `GET /api/languages/{lang}`, `PUT /api/languages/{lang}`, `DELETE /api/languages/{lang}` for database-backed dynamic language packs.
+  - **Frontend UI & English Fallback**:
+    - Added `#btn-save-role-template` ("💾 Save to DB" / "💾 Enregistrer en base" / "💾 In DB speichern") in the Agent Role subcard allowing users to persist customized system prompts directly to the database.
+    - Added `loadLanguagePacksFromDb()` on startup to dynamically register all language packs present in the database.
+    - Updated `t(key, ...args)` translation helper in `app.js` to strictly fall back to English (`I18N.en[key]`) whenever the active language has no translation defined for a given key (`undefined`, `null`, or `""`).
+  - **Automated Verification**:
+    - Added comprehensive unit test `test_role_prompts_and_language_packs_database_persistence_and_autohealing` verifying database pre-seeding, deletion recovery (self-healing), custom preset upsertion, and Spanish language pack persistence.
+    - Enhanced `chromium_full_scale_test.rs` to click `#btn-save-role-template` and assert the updated prompt template in the SeaORM database.
+
 ---
 
 ### Verification Summary
@@ -108,7 +131,7 @@
 | :--- | :--- | :--- |
 | Clippy Gate | `cargo clippy --all-targets -- -D warnings` | **0 warnings, 0 errors** |
 | Unit Tests (`agent-bridge`) | `cargo test --bin agent-bridge` | **1 passed, 0 failed** |
-| Unit Tests (`agent-hub`) | `cargo test --bin agent-hub` | **6 passed, 0 failed** |
+| Unit Tests (`agent-hub`) | `cargo test --bin agent-hub` | **7 passed, 0 failed** |
 | Frontend Syntax & OpenAPI | `cargo test --test frontend_syntax_test` | **3 passed, 0 failed** |
 | Chromium CDP E2E | `cargo test --test chromium_full_scale_test` | **1 passed, 0 failed** |
-| **Total Test Suite** | `cargo test` | **11 passed, 0 failed** |
+| **Total Test Suite** | `cargo test` | **12 passed, 0 failed** |

@@ -689,6 +689,31 @@ async fn full_scale_chromium_and_local_instances_e2e() {
         "Role prompt should auto-populate with the Architect preset instructions"
     );
 
+    // Click "Save to DB" (#btn-save-role-template) in Chromium to test database persistence from UI
+    let _ = cdp_eval(
+        &mut cdp_ws,
+        4031,
+        "(() => { document.getElementById('cli-role-prompt').value = 'You are a specialized Cloud Native SRE Architect.'; document.getElementById('btn-save-role-template')?.click(); return true; })()",
+    )
+    .await;
+    sleep(Duration::from_millis(600)).await;
+
+    // Verify preset was updated in the DB via API
+    let preset_check_resp = client
+        .get("http://127.0.0.1:18089/api/roles/presets?lang=en")
+        .send()
+        .await
+        .unwrap_or_else(|e| panic!("failed to fetch presets: {e}"));
+    let preset_check: Vec<Value> = preset_check_resp.json().await.unwrap_or_default();
+    let arch_check = preset_check.iter().find(|p| p["role"] == "architect");
+    assert!(
+        arch_check
+            .and_then(|p| p["prompt"].as_str())
+            .unwrap_or("")
+            .contains("Cloud Native SRE Architect"),
+        "Custom role prompt should be persisted in database via #btn-save-role-template"
+    );
+
     // Click "Initialize Agent" in Chromium
     let _ = cdp_eval(
         &mut cdp_ws,

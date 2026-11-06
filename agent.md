@@ -53,7 +53,7 @@ Because `Simply Agent Hub` shares lineage with the `simply_` family:
 - **Native Terminal**: Bi-directional WebSocket streaming live ANSI tmux screen frames and raw keystrokes without external xterm.js dependencies.
 - **Orchestration**: Real-time multi-agent communication channels with `@AgentName` auto-dispatch, role-based system prompt injection, and configurable message retention.
 - **Git Dashboard**: Direct status inspection, unified diffs, atomic staging/committing, and reversion.
-- **Internationalization (i18n)**: English by default with dynamic French language switcher and `localStorage` persistence.
+- **Internationalization (i18n)**: English by default with dynamic German and French switchers, database-backed role prompts and language packs (`role_prompts` and `language_packs` SeaORM tables), startup self-healing via `defaults.rs`, and automated English fallback.
 
 ---
 
@@ -84,11 +84,15 @@ Because `Simply Agent Hub` shares lineage with the `simply_` family:
     - Base backgrounds: `#161b24`, `#1e2430`, `#232a36`.
     - Accent & Borders: Cyan `#3daee9`, highlight `#2ecc71`, danger `#e74c3c`.
     - Typography: System sans-serif with `JetBrains Mono` / `Consolas` monospaced fonts for terminal, code, and diffs.
-- **Internationalization (i18n) & Extensible Language Packs**:
+- **Internationalization (i18n), Role Prompts & Database Persistence**:
   - Default language is **English** (`en`), with out-of-the-box **German** (`de`) and **French** (`fr`) support.
+  - Strict **English fallback** across both frontend (`t(key)`) and backend (`/api/roles/presets?lang=...`) whenever a translation or role preset value is missing.
+  - Role prompts and language packs are persisted in SeaORM database tables (`role_prompts` and `language_packs`), completely decoupled from hardcoded Rust logic.
+  - **Startup Self-Healing (`defaults.rs`)**: On app launch, `defaults::ensure_database_defaults(&db)` reconciles database records against canonical defaults, auto-inserting missing role prompts or language dictionaries if the database was partially initialized.
+  - UI button `#btn-save-role-template` allows updating role prompt presets in the database directly from the browser.
   - Automatic browser language detection via `detectBrowserLanguage()` (`navigator.languages` / `navigator.language`), overridable at will by the user with persistence in `localStorage`.
   - Accessible via a dedicated **Settings Modal** (`#settings-modal`) opened by the header gear icon (`⚙`, `#btn-open-settings`), consolidating language selection and workspace display preferences (compact header, retractable sidebar).
-  - Extensible runtime language pack registration via `window.registerLanguagePack(code, dictionary)`.
+  - Extensible runtime language pack registration via `window.registerLanguagePack(code, dictionary)` which persists packs to `/api/languages`.
   - Dynamic switching at will via `window.setAppLanguage('en' | 'fr' | 'de' | ...)` with immediate DOM translation across all tabs, cards, and titles.
   - **Zero technical leak in UI**: Implementation details such as backend ORM names (`SeaORM`) must NEVER appear in user-facing labels or menu titles (e.g. `Container Fleet` / `Parc de Conteneurs` / `Container-Flotte`).
 - **ECMAScript Syntax Verification**:
