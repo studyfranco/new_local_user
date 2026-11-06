@@ -41,13 +41,23 @@ fn app_js_has_no_syntax_errors() {
 }
 
 #[test]
-fn defaults_js_has_no_syntax_errors() {
-    let errors = syntax_errors("static/defaults.js");
+fn default_translate_json_is_valid_json() {
+    let path = repo_path("static/default_translate.json");
+    let content = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("default_translate.json must be readable: {e}"));
+    let val: serde_json::Value = serde_json::from_str(&content)
+        .unwrap_or_else(|e| panic!("default_translate.json must be valid JSON: {e}"));
     assert!(
-        errors.is_empty(),
-        "static/defaults.js has {} syntax error(s) and will not load in a browser:\n  {}",
-        errors.len(),
-        errors.join("\n  ")
+        val.get("available_languages").is_some(),
+        "default_translate.json must contain available_languages"
+    );
+    assert!(
+        val.get("role_prompts").is_some(),
+        "default_translate.json must contain role_prompts"
+    );
+    assert!(
+        val.get("language_packs").is_some(),
+        "default_translate.json must contain language_packs"
     );
 }
 

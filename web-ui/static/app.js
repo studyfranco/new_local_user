@@ -578,7 +578,26 @@
     // ═════════════════════════════════════════════════════════════════════════
     // 1. CLI INSTANCES, ROLES & SEAORM CRUD
     // ═════════════════════════════════════════════════════════════════════════
-    async function loadRolePresets() {
+    async function loadRolePresets(forceRefresh = false) {
+        const cacheKey = "agent_hub_role_presets_" + currentLang;
+        if (!forceRefresh) {
+            try {
+                const cached = localStorage.getItem(cacheKey);
+                if (cached) {
+                    const list = JSON.parse(cached);
+                    if (Array.isArray(list) && list.length > 0) {
+                        state.rolePresets = {};
+                        list.forEach((r) => {
+                            state.rolePresets[r.id] = r;
+                        });
+                        renderRoleOptions();
+                        return;
+                    }
+                }
+            } catch {
+                // ignore parsing error
+            }
+        }
         try {
             const resp = await fetch(`/api/roles/presets?lang=${encodeURIComponent(currentLang)}`);
             const list = await resp.json();
@@ -587,6 +606,11 @@
                 list.forEach((r) => {
                     state.rolePresets[r.id] = r;
                 });
+                try {
+                    localStorage.setItem(cacheKey, JSON.stringify(list));
+                } catch {
+                    // ignore storage quota error
+                }
                 renderRoleOptions();
             }
         } catch {
@@ -727,7 +751,12 @@
                 }),
             });
             if (resp.ok) {
-                await loadRolePresets();
+                try {
+                    localStorage.removeItem("agent_hub_role_presets_" + currentLang);
+                } catch {
+                    // ignore
+                }
+                await loadRolePresets(true);
                 appendMsg("console-messages", "system", "Database", t("roleTemplateSaved", role));
             }
         } catch (err) {
@@ -1948,24 +1977,59 @@
     window.renderLanguageSwitcher = renderLanguageSwitcher;
     window.I18N = I18N;
 
-    async function loadLanguagePacksFromDb() {
+    async function loadLanguagePacksFromDb(forceRefresh = false) {
         try {
+            // Restore cached language dictionary from localStorage if available
+            try {
+                const cachedCurrent = localStorage.getItem("agent_hub_dict_" + currentLang);
+                if (cachedCurrent && !forceRefresh) {
+                    const parsed = JSON.parse(cachedCurrent);
+                    if (parsed && typeof parsed === "object") {
+                        I18N[currentLang] = { ...(I18N.en || {}), ...parsed };
+                    }
+                }
+            } catch {
+                // ignore
+            }
+
             const resp = await fetch("/api/languages");
             if (!resp.ok) return;
             const list = await resp.json();
             if (Array.isArray(list)) {
                 for (const item of list) {
-                    if (item.lang && !I18N[item.lang]) {
-                        try {
-                            const dResp = await fetch(`/api/languages/${encodeURIComponent(item.lang)}`);
-                            if (dResp.ok) {
-                                const pack = await dResp.json();
-                                if (pack && pack.dictionary) {
-                                    I18N[item.lang] = { ...(I18N.en || {}), ...pack.dictionary };
+                    if (item.lang && (!I18N[item.lang] || forceRefresh)) {
+                        let dict = null;
+                        const cacheKey = "agent_hub_dict_" + item.lang;
+                        if (!forceRefresh) {
+                            try {
+                                const stored = localStorage.getItem(cacheKey);
+                                if (stored) {
+                                    dict = JSON.parse(stored);
                                 }
+                            } catch {
+                                // ignore
                             }
-                        } catch {
-                            // ignore
+                        }
+                        if (!dict) {
+                            try {
+                                const dResp = await fetch(`/api/languages/${encodeURIComponent(item.lang)}`);
+                                if (dResp.ok) {
+                                    const pack = await dResp.json();
+                                    if (pack && pack.dictionary) {
+                                        dict = pack.dictionary;
+                                        try {
+                                            localStorage.setItem(cacheKey, JSON.stringify(dict));
+                                        } catch {
+                                            // ignore quota errors
+                                        }
+                                    }
+                                }
+                            } catch {
+                                // ignore
+                            }
+                        }
+                        if (dict) {
+                            I18N[item.lang] = { ...(I18N.en || {}), ...dict };
                         }
                     }
                 }
@@ -1980,6 +2044,11 @@
         if (!code || typeof code !== "string" || !dictionary) return;
         const short = code.toLowerCase().trim();
         I18N[short] = { ...(I18N.en || {}), ...dictionary };
+        try {
+            localStorage.setItem("agent_hub_dict_" + short, JSON.stringify(dictionary));
+        } catch {
+            // ignore
+        }
         renderLanguageSwitcher();
         fetch("/api/languages", {
             method: "POST",
@@ -1994,6 +2063,7 @@
 
     window.setAppLanguage = function (lang) {
         const normalized = String(lang || "").toLowerCase().trim();
+        const prevLang = currentLang;
         currentLang = I18N[normalized] ? normalized : "en";
         localStorage.setItem("agent_hub_lang", currentLang);
         document.documentElement.lang = currentLang;
@@ -2020,7 +2090,8 @@
         const btnTm = $("btn-term-maximize");
         if (btnTm) btnTm.textContent = isTermMax ? t("btnRestoreTerm") : t("btnMaximizeTerm");
 
-        loadRolePresets();
+        // Load role presets from browser cache or backend if language changed
+        loadRolePresets(prevLang !== currentLang);
         renderCliSelector();
         renderInventoryTable();
     };

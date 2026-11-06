@@ -102,10 +102,72 @@ impl MigrationTrait for Migration {
             )
             .await?;
 
+        // 4. Composite index on available_languages(is_active, code) for fast active language lookups
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_available_languages_active_code")
+                    .table(AvailableLanguages::Table)
+                    .col(AvailableLanguages::IsActive)
+                    .col(AvailableLanguages::Code)
+                    .if_not_exists()
+                    .to_owned(),
+            )
+            .await?;
+
+        // 5. Composite index on role_prompts(lang, role) for language-filtered role prompt lookups
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_role_prompts_lang_role")
+                    .table(Alias::new("role_prompts"))
+                    .col(Alias::new("lang"))
+                    .col(Alias::new("role"))
+                    .if_not_exists()
+                    .to_owned(),
+            )
+            .await?;
+
+        // 6. Index on language_packs.name for language pack name lookups
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_language_packs_name")
+                    .table(Alias::new("language_packs"))
+                    .col(Alias::new("name"))
+                    .if_not_exists()
+                    .to_owned(),
+            )
+            .await?;
+
         Ok(())
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        let _ = manager
+            .drop_index(
+                Index::drop()
+                    .name("idx_language_packs_name")
+                    .table(Alias::new("language_packs"))
+                    .to_owned(),
+            )
+            .await;
+        let _ = manager
+            .drop_index(
+                Index::drop()
+                    .name("idx_role_prompts_lang_role")
+                    .table(Alias::new("role_prompts"))
+                    .to_owned(),
+            )
+            .await;
+        let _ = manager
+            .drop_index(
+                Index::drop()
+                    .name("idx_available_languages_active_code")
+                    .table(AvailableLanguages::Table)
+                    .to_owned(),
+            )
+            .await;
         let _ = manager
             .drop_index(
                 Index::drop()

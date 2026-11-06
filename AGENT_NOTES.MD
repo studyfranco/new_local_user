@@ -179,24 +179,34 @@
   - Executed full workspace formatting sweep with `cargo fmt`.
   - Verified that `cargo check`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` execute directly from the repository root with zero errors.
 
-#### 12. Externalization of Multilingual Defaults to `defaults.js` & In-Memory Thread-Safe `LanguageCache`
-* **Finding**: Hardcoding canonical role prompts, available languages, and large JSON dictionaries inside Rust variables (`defaults.rs`) bloated the compiled binary, required recompilation for any prompt or copy revision, and generated continuous database roundtrips on high-frequency UI polling.
+#### 12. Externalization of Multilingual Defaults to `default_translate.json`, TTL Server Cache & Browser Cache
+* **Finding**: Hardcoding canonical role prompts, available languages, and large JSON dictionaries inside Rust variables bloated the binary and necessitated recompilations. Storing defaults in `.js` required fragile parsing, whereas standard JSON provides direct deserialization. High-frequency queries required query-specific indexing and a thread-safe cache with a time-to-live (TTL) on-demand population. Furthermore, redundant HTTP requests on client view changes warranted a browser-side cache (`localStorage`) invalidated only on language switch or explicit modifications.
 * **Resolution**:
-  - **Clean External Defaults (`web-ui/static/defaults.js`)**:
-    - Created `static/defaults.js` defining canonical data (`available_languages`, `role_prompts`, and full dictionaries for `en`, `fr`, `de`).
-    - Exposed over HTTP route `GET /defaults.js` and loaded via `<script src="/defaults.js"></script>` in `index.html`.
+  - **Canonical JSON Seed File (`web-ui/static/default_translate.json`)**:
+    - Created pure JSON seed file `default_translate.json` containing `available_languages` (`en`, `fr`, `de`), canonical `role_prompts` (6 roles x 3 languages), and complete UI translation dictionaries (`language_packs`).
+    - Removed obsolete `defaults.js` and replaced `/defaults.js` route with `/default_translate.json`.
   - **Zero Embedded Language Constants in Rust Code (`defaults.rs`)**:
-    - Purged all massive static string constants from Rust code (`CANONICAL_ROLE_PROMPTS`, `CANONICAL_LANG_PACK_*`, `CANONICAL_AVAILABLE_LANGUAGES`).
-    - The Rust codebase now only retains configuration variables indicating *what* to look up in the database: `DEFAULT_LANG = "en"` and `DEFAULT_ROLE = "developer"`.
-    - Implemented `load_defaults_from_js()` which parses the external JS file (with embedded compile-time fallback) on startup when database tables are empty or missing default entries.
-  - **In-Memory Thread-Safe `LanguageCache` (`cache.rs`)**:
-    - Implemented `LanguageCache` wrapped in `Arc<tokio::sync::RwLock<LanguageCache>>` within `AppState`.
-    - Caches available languages (`available_languages`), language pack dictionaries (`language_packs`), and role presets (`role_presets`).
-    - Eliminates continuous database roundtrips on frontend UI queries (`/api/languages`, `/api/languages/{lang}`, `/api/languages/available`, `/api/roles/presets`).
-    - Synchronized cache invalidation on any mutation (`POST /api/languages`, `POST /api/languages/available`, `POST/PUT/DELETE /api/roles/presets`, and instance prompt updates).
+    - Purged all hardcoded multilingual constants from Rust code. The codebase only retains lookup keys: `DEFAULT_LANG = "en"` and `DEFAULT_ROLE = "developer"`.
+    - Implemented `load_defaults_from_json()` with compile-time embedded fallback `include_str!("../static/default_translate.json")` strictly for database self-healing when tables or rows are missing.
+  - **B-Tree Join & Query Indexes (`migration/m20261106_000004_available_languages.rs`)**:
+    - Added dedicated indexes for high-frequency queries:
+      - `idx_available_languages_active_code` on `available_languages(is_active, code)`
+      - `idx_role_prompts_lang_role` on `role_prompts(lang, role)`
+      - `idx_language_packs_name` on `language_packs(name)`
+      - Plus existing `idx_role_prompts_role_lang`, `idx_language_packs_lang`, `idx_available_languages_code`, `idx_available_languages_is_default`, `idx_available_languages_is_active`.
+  - **On-Demand Server-Side Cache with Monotonic TTL (`cache.rs`)**:
+    - Implemented `LanguageCache` where items are populated on-demand ("au fur et à mesure des appels") with monotonic time-to-live (`expires_at: Instant`).
+    - Configured default TTL to 5 minutes (`DEFAULT_CACHE_TTL = 300s`).
+    - Integrated with `list_available_languages_cached`, `get_language_pack`, and `list_role_presets`.
+    - Automated cache invalidation on any write or delete operation (`POST /api/languages`, `POST /api/languages/available`, `POST/PUT/DELETE /api/roles/presets`, prompt edits).
+  - **Browser-Side Client Cache (`app.js`)**:
+    - Stored language dictionaries and role presets in `localStorage` (`agent_hub_dict_${lang}`, `agent_hub_role_presets_${lang}`).
+    - Avoids repetitive network requests when re-rendering fields or navigating views.
+    - Cache is invalidated only when the user switches language (`setAppLanguage`) or explicitly saves a new role template (`#btn-save-role-template`).
   - **Automated Verification**:
-    - Added unit test assertions verifying cache hits, cache invalidation, and repopulation.
-    - Added `defaults_js_has_no_syntax_errors` to `frontend_syntax_test.rs` ensuring valid syntax via oxc_parser.
+    - Added `default_translate_json_is_valid_json` in `frontend_syntax_test.rs`.
+    - Tested index existence and cache invalidation in `main.rs`.
+    - Verified all 14 tests passing across workspace.
 
 ---
 

@@ -4,7 +4,7 @@
 //! (`available_languages`, `role_prompts`, `language_packs`).
 //!
 //! At application startup, if the database is uninitialized or missing defaults, this module
-//! reconciles the database by reading the canonical seed data from `static/defaults.js`.
+//! reconciles the database by reading the canonical seed data from `static/default_translate.json`.
 //! In the Rust codebase, only configuration variables (`DEFAULT_LANG`, `DEFAULT_ROLE`) define
 //! what to query from the database.
 
@@ -26,13 +26,13 @@ pub const DEFAULT_LANG: &str = "en";
 /// Default role when creating or querying an instance without an explicit role.
 pub const DEFAULT_ROLE: &str = "developer";
 
-/// Relative default file path for the JavaScript seed defaults.
-pub const DEFAULT_JS_FILE_PATH: &str = "static/defaults.js";
+/// Relative default file path for the JSON seed defaults.
+pub const DEFAULT_JSON_FILE_PATH: &str = "static/default_translate.json";
 
-/// Compile-time embedded copy of the JS defaults file to ensure container/test portability.
-const EMBEDDED_DEFAULTS_JS: &str = include_str!("../static/defaults.js");
+/// Compile-time embedded copy of the JSON defaults file to ensure container/test portability.
+const EMBEDDED_DEFAULTS_JSON: &str = include_str!("../static/default_translate.json");
 
-/// Deserialized seed representation from `static/defaults.js`.
+/// Deserialized seed representation from `static/default_translate.json`.
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct DefaultsSeed {
     pub available_languages: Vec<AvailableLanguageSeed>,
@@ -40,7 +40,7 @@ pub struct DefaultsSeed {
     pub language_packs: HashMap<String, LanguagePackSeed>,
 }
 
-/// Available language specification from `static/defaults.js`.
+/// Available language specification from `static/default_translate.json`.
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct AvailableLanguageSeed {
     pub code: String,
@@ -50,7 +50,7 @@ pub struct AvailableLanguageSeed {
     pub is_active: bool,
 }
 
-/// Role prompt specification from `static/defaults.js`.
+/// Role prompt specification from `static/default_translate.json`.
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct RolePromptSeed {
     pub role: String,
@@ -59,74 +59,41 @@ pub struct RolePromptSeed {
     pub prompt: String,
 }
 
-/// Language pack specification from `static/defaults.js`.
+/// Language pack specification from `static/default_translate.json`.
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct LanguagePackSeed {
     pub name: String,
     pub dictionary: serde_json::Value,
 }
 
-/// Parses canonical default seed data from the JavaScript file (`defaults.js`).
+/// Parses canonical default seed data from the JSON file (`default_translate.json`).
 ///
-/// Looks first on disk (`static/defaults.js`, `web-ui/static/defaults.js`, or `DEFAULTS_JS_PATH`).
+/// Looks first on disk (`static/default_translate.json`, `web-ui/static/default_translate.json`, or `DEFAULTS_JSON_PATH`).
 /// Falls back to the embedded defaults string if the external file is absent.
-pub fn load_defaults_from_js() -> Result<DefaultsSeed, String> {
-    let raw_content = if let Ok(custom_path) = std::env::var("DEFAULTS_JS_PATH")
+pub fn load_defaults_from_json() -> Result<DefaultsSeed, String> {
+    let raw_content = if let Ok(custom_path) = std::env::var("DEFAULTS_JSON_PATH")
         && let Ok(content) = std::fs::read_to_string(&custom_path)
     {
         content
-    } else if let Ok(content) = std::fs::read_to_string(DEFAULT_JS_FILE_PATH) {
+    } else if let Ok(content) = std::fs::read_to_string(DEFAULT_JSON_FILE_PATH) {
         content
-    } else if let Ok(content) = std::fs::read_to_string("web-ui/static/defaults.js") {
+    } else if let Ok(content) = std::fs::read_to_string("web-ui/static/default_translate.json") {
         content
-    } else if let Ok(content) = std::fs::read_to_string(Path::new("..").join(DEFAULT_JS_FILE_PATH))
+    } else if let Ok(content) =
+        std::fs::read_to_string(Path::new("..").join(DEFAULT_JSON_FILE_PATH))
     {
         content
     } else {
-        EMBEDDED_DEFAULTS_JS.to_string()
+        EMBEDDED_DEFAULTS_JSON.to_string()
     };
 
-    let start = raw_content
-        .find('{')
-        .ok_or_else(|| "Failed to find opening '{' in defaults.js".to_string())?;
+    serde_json::from_str::<DefaultsSeed>(&raw_content)
+        .map_err(|e| format!("Failed to parse default_translate.json: {e}"))
+}
 
-    // Find the matching closing '}' taking strings and escape sequences into account
-    let mut depth = 0;
-    let mut in_string = false;
-    let mut is_escaped = false;
-    let mut end = None;
-
-    for (idx, ch) in raw_content[start..].char_indices() {
-        if in_string {
-            if is_escaped {
-                is_escaped = false;
-            } else if ch == '\\' {
-                is_escaped = true;
-            } else if ch == '"' {
-                in_string = false;
-            }
-        } else {
-            match ch {
-                '"' => in_string = true,
-                '{' => depth += 1,
-                '}' => {
-                    depth -= 1;
-                    if depth == 0 {
-                        end = Some(start + idx);
-                        break;
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
-
-    let end = end
-        .ok_or_else(|| "Failed to find matching closing '}' for defaults.js object".to_string())?;
-
-    let json_slice = &raw_content[start..=end];
-    serde_json::from_str::<DefaultsSeed>(json_slice)
-        .map_err(|e| format!("Failed to parse defaults.js JSON payload: {e}"))
+/// Backwards-compatibility alias for `load_defaults_from_json()`.
+pub fn load_defaults_from_js() -> Result<DefaultsSeed, String> {
+    load_defaults_from_json()
 }
 
 // ============================================================================
@@ -138,12 +105,12 @@ pub fn load_defaults_from_js() -> Result<DefaultsSeed, String> {
 /// 2. Language packs (`language_packs` table)
 /// 3. Role prompts (`role_prompts` table)
 ///
-/// Missing records are inserted from `defaults.js`; existing entries are preserved.
+/// Missing records are inserted from `default_translate.json`; existing entries are preserved.
 pub async fn ensure_database_defaults(db: &DatabaseConnection) -> Result<usize, DbErr> {
-    let seed = match load_defaults_from_js() {
+    let seed = match load_defaults_from_json() {
         Ok(s) => s,
         Err(e) => {
-            error!("Could not load seed defaults from defaults.js: {e}");
+            error!("Could not load seed defaults from default_translate.json: {e}");
             return Err(DbErr::Custom(e));
         }
     };
@@ -188,7 +155,7 @@ pub async fn ensure_available_languages_seeded(
 
     if added > 0 {
         info!(
-            "Database verification: healed/inserted {added} available language(s) from defaults.js"
+            "Database verification: healed/inserted {added} available language(s) from default_translate.json"
         );
     }
 
@@ -276,7 +243,7 @@ pub async fn ensure_role_prompts_seeded(
 // ============================================================================
 
 /// Queries the database for a role prompt, falling back to `DEFAULT_LANG` ("en") if missing.
-/// If the database is missing both, heals the database from `defaults.js`.
+/// If the database is missing both, heals the database from `default_translate.json`.
 pub async fn get_or_create_role_prompt(
     db: &DatabaseConnection,
     role: &str,
@@ -295,8 +262,8 @@ pub async fn get_or_create_role_prompt(
         return Ok(record.prompt);
     }
 
-    // 2. Heal from defaults.js if missing in database for the requested language
-    if let Ok(seed) = load_defaults_from_js()
+    // 2. Heal from default_translate.json if missing in database for the requested language
+    if let Ok(seed) = load_defaults_from_json()
         && let Some(spec) = seed
             .role_prompts
             .iter()
@@ -327,8 +294,8 @@ pub async fn get_or_create_role_prompt(
         return Ok(fallback_record.prompt);
     }
 
-    // 4. Heal English default from defaults.js if even default English is missing
-    if let Ok(seed) = load_defaults_from_js()
+    // 4. Heal English default from default_translate.json if even default English is missing
+    if let Ok(seed) = load_defaults_from_json()
         && let Some(spec) = seed
             .role_prompts
             .iter()
@@ -371,7 +338,7 @@ pub async fn get_or_create_role_label(
         return Ok(record.label);
     }
 
-    if let Ok(seed) = load_defaults_from_js()
+    if let Ok(seed) = load_defaults_from_json()
         && let Some(spec) = seed
             .role_prompts
             .iter()
@@ -390,7 +357,7 @@ pub async fn get_or_create_role_label(
         return Ok(fallback_record.label);
     }
 
-    if let Ok(seed) = load_defaults_from_js()
+    if let Ok(seed) = load_defaults_from_json()
         && let Some(spec) = seed
             .role_prompts
             .iter()

@@ -1,9 +1,4 @@
-// Simply Agent Hub — Canonical Defaults for Database Seeding & Multilingual UI
-// Contains: Available Languages, Role Prompts and UI Language Packs (EN, FR, DE).
-// This file is loaded at startup to populate empty database tables, and can also be
-// imported directly in client-side scripts.
-
-const SIMPLY_DEFAULTS = {
+{
   "available_languages": [
     {
       "code": "en",
@@ -517,11 +512,5 @@ const SIMPLY_DEFAULTS = {
       }
     }
   }
-};
+}
 
-if (typeof window !== "undefined") {
-  window.SIMPLY_DEFAULTS = SIMPLY_DEFAULTS;
-}
-if (typeof module !== "undefined" && module.exports) {
-  module.exports = SIMPLY_DEFAULTS;
-}

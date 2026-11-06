@@ -55,7 +55,7 @@ use uuid::Uuid;
 const INDEX_HTML: &str = include_str!("../static/index.html");
 const STYLE_CSS: &str = include_str!("../static/style.css");
 const APP_JS: &str = include_str!("../static/app.js");
-const DEFAULTS_JS: &str = include_str!("../static/defaults.js");
+const DEFAULT_TRANSLATE_JSON: &str = include_str!("../static/default_translate.json");
 
 #[derive(Clone)]
 pub struct AppState {
@@ -337,7 +337,7 @@ async fn main() {
         default_cwd,
         http_client,
         channel_hubs: Arc::new(RwLock::new(HashMap::new())),
-        lang_cache: Arc::new(tokio::sync::RwLock::new(LanguageCache::new())),
+        lang_cache: Arc::new(tokio::sync::RwLock::new(LanguageCache::default())),
     });
 
     let app = build_router(state);
@@ -365,7 +365,10 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/", get(serve_index))
         .route("/style.css", get(serve_css))
         .route("/app.js", get(serve_js))
-        .route("/defaults.js", get(serve_defaults_js))
+        .route(
+            "/default_translate.json",
+            get(serve_default_translate_json),
+        )
         .route("/healthz", get(serve_healthz))
         .route("/ready", get(serve_ready))
         .route("/api/config", get(serve_config))
@@ -470,10 +473,10 @@ async fn serve_js() -> impl IntoResponse {
     )
 }
 
-async fn serve_defaults_js() -> impl IntoResponse {
+async fn serve_default_translate_json() -> impl IntoResponse {
     (
-        [("content-type", "application/javascript; charset=utf-8")],
-        DEFAULTS_JS,
+        [("content-type", "application/json; charset=utf-8")],
+        DEFAULT_TRANSLATE_JSON,
     )
 }
 
@@ -2297,12 +2300,12 @@ async fn list_role_presets(
     // 1. Check in-memory language/role cache to avoid database roundtrip
     {
         let r = state.lang_cache.read().await;
-        if let Some(cached) = r.role_presets.get(&target_lang) {
+        if let Some(cached) = r.get_role_presets(&target_lang) {
             return (StatusCode::OK, Json(json!(cached)));
         }
     }
 
-    // 2. Cache miss: query database
+    // 2. Cache miss or expired: query database
     let mut presets = match role_prompt::Entity::find()
         .filter(role_prompt::Column::Lang.eq(&target_lang))
         .order_by_asc(role_prompt::Column::Role)
@@ -2343,10 +2346,10 @@ async fn list_role_presets(
         })
         .collect();
 
-    // 3. Store in cache
+    // 3. Store in cache with TTL
     {
         let mut w = state.lang_cache.write().await;
-        w.role_presets.insert(target_lang, response.clone());
+        w.set_role_presets(target_lang, response.clone());
     }
 
     (StatusCode::OK, Json(json!(response)))
@@ -2522,14 +2525,14 @@ async fn list_available_languages_cached(
 ) -> Result<Vec<available_language::Model>, DbErr> {
     {
         let r = state.lang_cache.read().await;
-        if let Some(ref list) = r.available_languages {
-            return Ok(list.clone());
+        if let Some(list) = r.get_available_languages() {
+            return Ok(list);
         }
     }
     let list = defaults::list_available_languages(&state.db).await?;
     {
         let mut w = state.lang_cache.write().await;
-        w.available_languages = Some(list.clone());
+        w.set_available_languages(list.clone());
     }
     Ok(list)
 }
@@ -2612,7 +2615,7 @@ async fn get_language_pack(
     // 1. Check in-memory cache first to avoid continuous database queries
     {
         let r = state.lang_cache.read().await;
-        if let Some(cached) = r.language_packs.get(&lang) {
+        if let Some(cached) = r.get_language_pack(&lang) {
             return (
                 StatusCode::OK,
                 Json(json!({
@@ -2626,7 +2629,7 @@ async fn get_language_pack(
         }
     }
 
-    // 2. Cache miss: query database and cache result
+    // 2. Cache miss or expired: query database and cache result
     match language_pack::Entity::find()
         .filter(language_pack::Column::Lang.eq(&lang))
         .one(&state.db)
@@ -2644,7 +2647,7 @@ async fn get_language_pack(
             };
             {
                 let mut w = state.lang_cache.write().await;
-                w.language_packs.insert(lang.clone(), cached_item);
+                w.set_language_pack(lang.clone(), cached_item);
             }
             (
                 StatusCode::OK,
@@ -3289,7 +3292,7 @@ mod tests {
             default_cwd: default_cwd.to_string(),
             http_client,
             channel_hubs: Arc::new(RwLock::new(HashMap::new())),
-            lang_cache: Arc::new(tokio::sync::RwLock::new(LanguageCache::new())),
+            lang_cache: Arc::new(tokio::sync::RwLock::new(LanguageCache::default())),
         });
 
         let app = build_router(state.clone());
@@ -3836,7 +3839,7 @@ mod tests {
         // After registering "it", the cache was properly invalidated:
         let cache_r = state.lang_cache.read().await;
         assert!(
-            cache_r.available_languages.is_none(),
+            cache_r.get_available_languages().is_none(),
             "Available languages cache must be invalidated after language registration"
         );
         drop(cache_r);
@@ -3848,27 +3851,29 @@ mod tests {
             .await;
         let cache_r2 = state.lang_cache.read().await;
         assert!(
-            cache_r2.available_languages.is_some(),
+            cache_r2.get_available_languages().is_some(),
             "Available languages must be cached after fetch"
         );
         assert!(
-            cache_r2.role_presets.contains_key("en"),
+            cache_r2.get_role_presets("en").is_some(),
             "English role presets must be cached"
         );
         drop(cache_r2);
 
-        // Verify GET /defaults.js route
-        let defaults_js_resp = client
-            .get(format!("{}/defaults.js", base_url))
+        // Verify GET /default_translate.json route
+        let defaults_json_resp = client
+            .get(format!("{}/default_translate.json", base_url))
             .send()
             .await
-            .unwrap_or_else(|e| panic!("get defaults.js failed: {e}"));
-        assert_eq!(defaults_js_resp.status(), StatusCode::OK);
-        let defaults_js_text = defaults_js_resp
-            .text()
+            .unwrap_or_else(|e| panic!("get default_translate.json failed: {e}"));
+        assert_eq!(defaults_json_resp.status(), StatusCode::OK);
+        let defaults_json: Value = defaults_json_resp
+            .json()
             .await
-            .unwrap_or_else(|e| panic!("read text failed: {e}"));
-        assert!(defaults_js_text.contains("SIMPLY_DEFAULTS"));
+            .unwrap_or_else(|e| panic!("parse json failed: {e}"));
+        assert!(defaults_json["available_languages"].is_array());
+        assert!(defaults_json["role_prompts"].is_array());
+        assert!(defaults_json["language_packs"].is_object());
     }
 
     #[tokio::test]
@@ -3938,6 +3943,18 @@ mod tests {
         assert!(
             index_names.contains(&"idx_available_languages_is_active".to_string()),
             "Missing index on available_languages.is_active"
+        );
+        assert!(
+            index_names.contains(&"idx_available_languages_active_code".to_string()),
+            "Missing composite index on available_languages(is_active, code)"
+        );
+        assert!(
+            index_names.contains(&"idx_role_prompts_lang_role".to_string()),
+            "Missing composite index on role_prompts(lang, role)"
+        );
+        assert!(
+            index_names.contains(&"idx_language_packs_name".to_string()),
+            "Missing index on language_packs.name"
         );
 
         // 5. Verify foreign key relation integrity and cascading/SetNull behavior
