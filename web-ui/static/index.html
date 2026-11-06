@@ -13,10 +13,21 @@
     <div id="dashboard-container" class="container">
         <div id="top-bar" class="top-bar">
             <header class="header">
-                <div class="logo">
+                <!-- Brand / Home: click returns to home console -->
+                <a href="#console" id="brand-home" class="logo brand-home" title="Simply Agent Hub — Accueil" role="button" aria-label="Simply Agent Hub Home" onclick="window.switchTab('console'); return false;">
                     <div class="logo-icon"></div>
                     <h1>Simply Agent Hub</h1>
-                </div>
+                </a>
+
+                <!-- Tab Navigation (Inline on the same line as Simply Agent Hub) -->
+                <nav class="tab-nav" role="tablist">
+                    <button class="tab-btn active" data-tab="console" role="tab" aria-selected="true" data-i18n="tabConsole">CLI Console</button>
+                    <button class="tab-btn" data-tab="orchestration" role="tab" aria-selected="false" data-i18n="tabOrchestration">Orchestration</button>
+                    <button class="tab-btn" data-tab="git" role="tab" aria-selected="false" data-i18n="tabGit">🔀 Git Diff</button>
+                    <button class="tab-btn" data-tab="inventory" role="tab" aria-selected="false" data-i18n="tabInventory">Container Fleet</button>
+                    <button class="tab-btn" data-tab="rpc" role="tab" aria-selected="false" data-i18n="tabRpc">JSON-RPC</button>
+                </nav>
+
                 <div class="header-actions">
                     <button id="btn-toggle-sidebar" class="btn btn-secondary btn-sm" title="Toggle left sidebar (Retract / Expand)" data-i18n="btnToggleSidebar">◀ Sidebar</button>
                     <button id="btn-toggle-compact-header" class="btn btn-secondary btn-sm" title="Toggle compact header (Maximize space)" data-i18n="btnCompactHeader">🗕 Header</button>
@@ -26,15 +37,6 @@
                     <button id="btn-refresh-all" class="btn btn-secondary btn-sm" data-i18n="btnRefreshAll">↻ Refresh Status</button>
                 </div>
             </header>
-
-            <!-- Tab Navigation -->
-            <nav class="tab-nav" role="tablist">
-                <button class="tab-btn active" data-tab="console" role="tab" aria-selected="true" data-i18n="tabConsole">CLI Console, Roles &amp; Native Terminal</button>
-                <button class="tab-btn" data-tab="orchestration" role="tab" aria-selected="false" data-i18n="tabOrchestration">Multi-CLI Orchestration Channels</button>
-                <button class="tab-btn" data-tab="git" role="tab" aria-selected="false" data-i18n="tabGit">🔀 Git Diff &amp; Commit</button>
-                <button class="tab-btn" data-tab="inventory" role="tab" aria-selected="false" data-i18n="tabInventory">Container Fleet</button>
-                <button class="tab-btn" data-tab="rpc" role="tab" aria-selected="false" data-i18n="tabRpc">JSON-RPC Inspector</button>
-            </nav>
         </div>
 
         <!-- Floating expand pill when sidebar is retracted -->

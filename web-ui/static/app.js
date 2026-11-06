@@ -8,11 +8,11 @@
             noCliSelected: "No CLI selected",
             activeCliReady: "Ready",
             btnRefreshAll: "↻ Refresh Status",
-            tabConsole: "CLI Console, Roles & Native Terminal",
-            tabOrchestration: "Multi-CLI Orchestration Channels",
-            tabGit: "🔀 Git Diff & Commit",
+            tabConsole: "CLI Console",
+            tabOrchestration: "Orchestration",
+            tabGit: "🔀 Git Diff",
             tabInventory: "Container Fleet",
-            tabRpc: "JSON-RPC Inspector",
+            tabRpc: "JSON-RPC",
             cliSelectorTitle: "CLI Container Selection",
             cliSelectorSubtitle: "Select, rename, assign a role, or authenticate any of your CLI instances.",
             activeCliLabel: "Active CLI Instance",
@@ -140,11 +140,11 @@
             noCliSelected: "Aucun CLI sélectionné",
             activeCliReady: "Prêt",
             btnRefreshAll: "↻ Actualiser l'état",
-            tabConsole: "Console CLI, Rôles & Terminal Natif",
-            tabOrchestration: "Canaux d'Orchestration Multi-CLIs",
-            tabGit: "🔀 Git Diff & Commit",
+            tabConsole: "Console CLI",
+            tabOrchestration: "Orchestration",
+            tabGit: "🔀 Git Diff",
             tabInventory: "Parc de Conteneurs",
-            tabRpc: "Inspecteur JSON-RPC",
+            tabRpc: "JSON-RPC",
             cliSelectorTitle: "Sélection du Conteneur CLI",
             cliSelectorSubtitle: "Choisissez, renommez, attribuez un rôle ou authentifiez n'importe laquelle de vos instances.",
             activeCliLabel: "Instance CLI active",
@@ -272,11 +272,11 @@
             noCliSelected: "Kein CLI ausgewählt",
             activeCliReady: "Bereit",
             btnRefreshAll: "↻ Status aktualisieren",
-            tabConsole: "CLI-Konsole, Rollen & Natives Terminal",
-            tabOrchestration: "Multi-CLI Orchestrierungskanäle",
-            tabGit: "🔀 Git Diff & Commit",
+            tabConsole: "CLI-Konsole",
+            tabOrchestration: "Orchestrierung",
+            tabGit: "🔀 Git-Diff",
             tabInventory: "Container-Flotte",
-            tabRpc: "JSON-RPC Inspektor",
+            tabRpc: "JSON-RPC",
             cliSelectorTitle: "CLI-Container-Auswahl",
             cliSelectorSubtitle: "Wählen, benennen, weisen Sie eine Rolle zu oder authentifizieren Sie eine Ihrer CLI-Instanzen.",
             activeCliLabel: "Aktive CLI-Instanz",
@@ -567,13 +567,26 @@
 
     window.switchView = window.switchTab;
 
-    // ─── Tab Navigation ──────────────────────────────────────────────────────
+    // ─── Tab Navigation & Brand Home ─────────────────────────────────────────
     document.querySelectorAll(".tab-btn").forEach((btn) => {
         btn.addEventListener("click", () => {
             const target = btn.getAttribute("data-tab");
             window.switchTab(target);
         });
     });
+
+    const brandHome = $("brand-home");
+    if (brandHome) {
+        brandHome.addEventListener("click", (e) => {
+            e.preventDefault();
+            const drawer = $("native-terminal-drawer");
+            if (drawer?.classList.contains("maximized")) {
+                toggleTerminalMaximize(false);
+            }
+            window.switchTab("console");
+            window.scrollTo({ top: 0, behavior: "instant" });
+        });
+    }
 
     // ═════════════════════════════════════════════════════════════════════════
     // 1. CLI INSTANCES, ROLES & SEAORM CRUD

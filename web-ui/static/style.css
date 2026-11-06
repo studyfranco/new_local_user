@@ -69,49 +69,82 @@ body {
     top: 0;
     z-index: 100;
     background-color: var(--bg-main);
-    padding-top: 0.25rem;
+    padding-top: 0.35rem;
+    padding-bottom: 0.35rem;
+    margin-bottom: 0.75rem;
 }
 
 .header {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    margin-bottom: 1rem;
-    padding-bottom: 1rem;
+    gap: 0.85rem;
+    margin-bottom: 0;
+    padding-bottom: 0.35rem;
     border-bottom: 1px solid var(--border);
-    flex-wrap: wrap;
-    gap: 1rem;
+    flex-wrap: nowrap;
 }
 
 .logo {
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: 0.6rem;
+    text-decoration: none;
+    color: inherit;
+    cursor: pointer;
+    flex-shrink: 0;
+    user-select: none;
+    transition: opacity var(--transition-fast), transform var(--transition-fast);
+}
+
+.logo:hover {
+    opacity: 0.88;
+    transform: translateY(-1px);
+}
+
+.logo:active {
+    transform: translateY(0);
 }
 
 .logo-icon {
-    width: 36px;
-    height: 36px;
-    border-radius: 8px;
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
     background: linear-gradient(135deg, var(--accent), var(--highlight));
     box-shadow: 0 2px 8px rgba(28, 220, 154, 0.3);
+    flex-shrink: 0;
 }
 
 .logo h1 {
-    font-size: 1.6rem;
+    font-size: 1.15rem;
     font-weight: 700;
+    white-space: nowrap;
     background: linear-gradient(90deg, var(--accent), var(--highlight));
     background-clip: text;
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     letter-spacing: -0.02em;
+    margin: 0;
+    line-height: 1.2;
 }
 
 .header-actions {
     display: flex;
     align-items: center;
-    gap: 0.6rem;
-    flex-wrap: wrap;
+    gap: 0.45rem;
+    flex-shrink: 0;
+    margin-left: auto;
+}
+
+#header-active-cli-badge {
+    max-width: 175px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#header-instances-count {
+    white-space: nowrap;
+    flex-shrink: 0;
 }
 
 .lang-selector {
@@ -188,17 +221,17 @@ body {
     background-color: var(--danger);
 }
 
-/* ─── Tab Navigation ────────────────────────────────────── */
+/* ─── Tab Navigation (Same row as Logo & Actions) ───────── */
 
 .tab-nav {
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
-    gap: 0.35rem;
-    margin-bottom: 0.85rem;
-    border-bottom: 2px solid var(--border);
+    gap: 0.25rem;
+    margin-bottom: 0;
+    border-bottom: none;
     padding-bottom: 0;
     overflow: visible;
+    flex-shrink: 0;
 }
 
 .tab-nav::-webkit-scrollbar {
@@ -208,20 +241,21 @@ body {
 }
 
 .tab-btn {
-    padding: 0.5rem 1rem;
+    padding: 0.38rem 0.75rem;
     background: transparent;
     border: none;
     border-bottom: 2px solid transparent;
     color: var(--text-muted);
     font-family: var(--font-sans);
-    font-size: 0.88rem;
+    font-size: 0.84rem;
     font-weight: 600;
     cursor: pointer;
     transition: all var(--transition-base);
     position: relative;
-    bottom: -2px;
     white-space: nowrap;
     outline: none;
+    border-radius: var(--radius) var(--radius) 0 0;
+    line-height: 1.3;
 }
 
 .tab-btn:hover {
@@ -323,16 +357,18 @@ body.sidebar-collapsed-active .btn-expand-sidebar-pill {
     gap: 0.25rem;
 }
 
-/* ─── Compact Header / Minimized Top Bar ──────────────────── */
+/* ─── Compact Header / Single Line Header Layout ─────────── */
 body.compact-header .top-bar {
-    padding-top: 0;
+    padding-top: 0.1rem;
+    padding-bottom: 0.2rem;
+    margin-bottom: 0.45rem;
 }
 
 body.compact-header .header {
-    padding: 0.2rem 0;
-    margin-bottom: 0.35rem;
-    padding-bottom: 0.35rem;
-    gap: 0.45rem;
+    padding: 0.1rem 0;
+    margin-bottom: 0;
+    padding-bottom: 0.2rem;
+    gap: 0.5rem;
 }
 
 body.compact-header .logo-icon {
@@ -346,38 +382,52 @@ body.compact-header .logo h1 {
     font-weight: 700;
 }
 
+body.compact-header .tab-nav {
+    margin-bottom: 0;
+    gap: 0.15rem;
+}
+
+body.compact-header .tab-btn {
+    padding: 0.22rem 0.55rem;
+    font-size: 0.78rem;
+}
+
 body.compact-header .header-actions {
-    gap: 0.35rem;
+    gap: 0.3rem;
 }
 
 body.compact-header .header-actions .btn {
-    padding: 0.25rem 0.55rem;
-    font-size: 0.78rem;
+    padding: 0.2rem 0.5rem;
+    font-size: 0.76rem;
     line-height: 1.2;
 }
 
 body.compact-header .header-actions .badge {
-    padding: 0.2rem 0.5rem;
-    font-size: 0.75rem;
-}
-
-body.compact-header .tab-nav {
-    margin-bottom: 0.4rem;
-    gap: 0.2rem;
-}
-
-body.compact-header .tab-btn {
-    padding: 0.25rem 0.75rem;
-    font-size: 0.82rem;
+    padding: 0.18rem 0.45rem;
+    font-size: 0.74rem;
 }
 
 body.compact-header .container {
-    padding-top: 0.25rem;
-    padding-bottom: 0.5rem;
+    padding-top: 0.2rem;
+    padding-bottom: 0.35rem;
 }
 
 body.compact-header .subtitle {
     display: none;
+}
+
+@media (max-width: 1100px) {
+    .header {
+        flex-wrap: wrap;
+        row-gap: 0.35rem;
+    }
+
+    .tab-nav {
+        order: 3;
+        width: 100%;
+        flex-basis: 100%;
+        margin-top: 0.2rem;
+    }
 }
 
 @media (max-width: 1024px) {
@@ -522,12 +572,12 @@ body.compact-header .subtitle {
 .chat-card {
     display: flex;
     flex-direction: column;
-    height: calc(100vh - 165px);
+    height: calc(100vh - 125px);
     min-height: 520px;
 }
 
 body.compact-header .chat-card {
-    height: calc(100vh - 110px);
+    height: calc(100vh - 85px);
 }
 
 /* When native terminal is active in chat-card, terminal takes 100% of the workspace */
@@ -540,22 +590,22 @@ body.compact-header .chat-card {
 .chat-card.terminal-active .native-terminal-drawer {
     flex: 1;
     height: 100%;
-    min-height: calc(100vh - 190px);
+    min-height: calc(100vh - 150px);
     margin-bottom: 0;
 }
 
 body.compact-header .chat-card.terminal-active .native-terminal-drawer {
-    min-height: calc(100vh - 145px);
+    min-height: calc(100vh - 105px);
 }
 
 .chat-card.terminal-active .terminal-viewport {
     flex: 1;
     height: 100%;
-    min-height: calc(100vh - 270px);
+    min-height: calc(100vh - 225px);
 }
 
 body.compact-header .chat-card.terminal-active .terminal-viewport {
-    min-height: calc(100vh - 215px);
+    min-height: calc(100vh - 165px);
 }
 
 .chat-header {

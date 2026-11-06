@@ -508,6 +508,79 @@ async fn chromium_tmux_cli_agents_e2e_verification() {
 
     // Close terminal modal
     let _ = cdp_eval(&mut ws_stream, 241, "window.closeModal('terminal'); true").await;
+    sleep(Duration::from_millis(300)).await;
+
+    // 13. Test Brand Home button and Single-Line Header alignment
+    // First, switch away from console tab to orchestration tab
+    let _ = cdp_eval(
+        &mut ws_stream,
+        250,
+        "window.switchTab('orchestration'); true",
+    )
+    .await;
+    sleep(Duration::from_millis(300)).await;
+
+    let orch_active = cdp_eval(
+        &mut ws_stream,
+        251,
+        "document.getElementById('tab-orchestration')?.classList.contains('active')",
+    )
+    .await;
+    assert_eq!(
+        orch_active,
+        json!(true),
+        "Orchestration panel should be active after switch"
+    );
+
+    // Click brand home button ('Simply Agent Hub')
+    let _ = cdp_eval(
+        &mut ws_stream,
+        252,
+        "document.getElementById('brand-home')?.click(); true",
+    )
+    .await;
+    sleep(Duration::from_millis(300)).await;
+
+    // Verify console panel is restored to active
+    let console_active = cdp_eval(
+        &mut ws_stream,
+        253,
+        "document.getElementById('tab-console')?.classList.contains('active')",
+    )
+    .await;
+    assert_eq!(
+        console_active,
+        json!(true),
+        "Clicking brand-home ('Simply Agent Hub') must return to console home tab"
+    );
+
+    // Verify that brand logo and tab navigation are rendered on the same row
+    let logo_top = cdp_eval(
+        &mut ws_stream,
+        254,
+        "Math.round(document.getElementById('brand-home')?.getBoundingClientRect().top || 0)",
+    )
+    .await;
+    let tab_top = cdp_eval(
+        &mut ws_stream,
+        255,
+        "Math.round(document.querySelector('.tab-nav')?.getBoundingClientRect().top || 0)",
+    )
+    .await;
+    let logo_top_val = logo_top.as_i64().unwrap_or(0);
+    let tab_top_val = tab_top.as_i64().unwrap_or(0);
+    assert!(
+        (logo_top_val - tab_top_val).abs() <= 10,
+        "Brand home and tab navigation must be horizontally aligned on the same single line: logo={logo_top_val}, tab={tab_top_val}"
+    );
+
+    // Save screenshot of the single-line header with brand home at the same level as tabs
+    save_screenshot(
+        &mut ws_stream,
+        260,
+        &artifact_dir.join("chromium_17_single_line_header_home.png"),
+    )
+    .await;
 
     // Clean up test sessions
     let _ = Command::new("tmux")

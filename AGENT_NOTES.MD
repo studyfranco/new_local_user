@@ -251,6 +251,24 @@
       - `chromium_16_terminal_fullscreen_maximized.png` (True 100vw x 100vh edge-to-edge fullscreen terminal)
     - Full test suite passed (15/15 tests).
 
+#### 15. Unified Single-Line Header Layout & "Simply Agent Hub" Home Navigation
+* **Finding**: The dashboard previously stacked the brand logo / actions on one line and the navigation tab bar on a separate second line, taking up redundant vertical space. Furthermore, the brand title was static text and did not provide an intuitive way to return to the home console from other tabs or views.
+* **Resolution**:
+  - **Unified Single Horizontal Line Header (`web-ui/static/index.html` & `style.css`)**:
+    - Embedded `<nav class="tab-nav">` directly inside `<header class="header">`.
+    - Arranged `.header` as a single horizontal flex row (`display: flex; align-items: center; gap: 0.85rem; flex-wrap: nowrap;`).
+    - Aligned `#brand-home` and `.tab-nav` on the left (`flex-shrink: 0;`), with `.header-actions` pushed to the far right (`margin-left: auto;`).
+    - Streamlined tab labels across language packs (EN: "CLI Console", "Orchestration", "Git Diff", "Container Fleet", "JSON-RPC") and added `max-width: 175px` ellipsis truncation on active instance badges to prevent any flexbox overflow.
+    - Reduced overall top-bar height to ~42px, allowing `.chat-card` and native terminal viewport to gain maximum vertical space.
+  - **"Simply Agent Hub" Brand as Home Button (`index.html` & `app.js`)**:
+    - Wrapped `.logo` into an accessible interactive anchor/button `#brand-home` (`role="button"`, `title="Simply Agent Hub — Accueil"`).
+    - Clicking `#brand-home` restores any maximized terminal, resets window scroll to `(0, 0)`, and immediately activates `window.switchTab('console')`.
+  - **Automated Verification**:
+    - Added automated test step in `chromium_tmux_cli_test.rs`: switches away to `orchestration` tab, clicks `#brand-home`, asserts `console` tab is restored to active, and asserts `brand-home` and `.tab-nav` are horizontally aligned within $\pm 10$px on the same row.
+    - Captured and visually verified screenshot:
+      - `chromium_17_single_line_header_home.png`
+    - All 15 tests passing across entire workspace.
+
 ---
 
 ### Verification Summary
