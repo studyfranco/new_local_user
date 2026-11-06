@@ -73,3 +73,23 @@ fn app_js_and_html_have_complete_i18n_support() {
     assert!(js.contains("localStorage.getItem(\"agent_hub_lang\")"));
     assert!(js.contains("window.setAppLanguage"));
 }
+
+#[test]
+fn openapi_spec_exists_and_covers_endpoints() {
+    let api_yml_path = repo_path("api.yml");
+    let content = std::fs::read_to_string(&api_yml_path)
+        .unwrap_or_else(|e| panic!("api.yml must be readable: {e}"));
+
+    assert!(content.contains("openapi: 3.1.0"));
+    assert!(content.contains("title: Simply Agent Hub API"));
+    assert!(content.contains("/api/instances:"));
+    assert!(content.contains("/ws/instances/{id}/terminal:"));
+    assert!(content.contains("/api/roles/presets:"));
+    assert!(content.contains("/api/orchestration/channels:"));
+    assert!(content.contains("/api/orchestration/channels/{id}/messages:"));
+    assert!(content.contains("/api/orchestration/channels/{id}/prune:"));
+    assert!(content.contains("/api/orchestration/channels/{id}/export:"));
+    assert!(content.contains("/api/git/status:"));
+    assert!(content.contains("/api/git/commit:"));
+    assert!(content.contains("/api/git/revert:"));
+}

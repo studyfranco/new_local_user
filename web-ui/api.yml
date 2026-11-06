@@ -1,0 +1,937 @@
+openapi: 3.1.0
+info:
+  title: Simply Agent Hub API
+  version: 0.2.0
+  description: |
+    Enterprise-grade REST & WebSocket API for **Simply Agent Hub**, orchestrating multi-agent
+    CLI containers (Claude Code, Google Antigravity, OpenAI Codex, Goose ACP) in a rootless Linux environment.
+    Features SeaORM 2.0 multi-database persistence, native tmux ANSI terminal streaming over WebSockets,
+    role-based collective auto-dispatch, configurable message retention, and Git workspace operations.
+servers:
+  - url: http://127.0.0.1:8080
+    description: Local Simply Agent Hub Server
+  - url: http://localhost:{port}
+    description: Configurable Port Instance
+    variables:
+      port:
+        default: "8080"
+paths:
+  # ==========================================================================
+  # Health & Monitoring Probes
+  # ==========================================================================
+  /healthz:
+    get:
+      summary: Liveness probe
+      description: Returns immediate OK status if the HTTP server is running.
+      responses:
+        "200":
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /ready:
+    get:
+      summary: Readiness probe
+      description: Verifies database connectivity and background service readiness.
+      responses:
+        "200":
+          description: Service and database are ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ready:
+                    type: boolean
+                    example: true
+                  database:
+                    type: string
+                    example: connected
+        "503":
+          description: Service not ready
+
+  /api/config:
+    get:
+      summary: Get service configuration
+      description: Returns default working directory, database backend type, and configured endpoints.
+      responses:
+        "200":
+          description: Hub configuration parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigResponse'
+
+  /api/status:
+    get:
+      summary: Probe all default agent ports
+      description: Checks connectivity to standard ports for Claude, Antigravity, Codex, and Goose.
+      responses:
+        "200":
+          description: Status summary of known agent endpoints
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: boolean
+
+  # ==========================================================================
+  # Role Presets
+  # ==========================================================================
+  /api/roles/presets:
+    get:
+      summary: List role presets
+      description: Returns pre-packaged agent roles and their customizable prompt templates in English or French.
+      parameters:
+        - in: query
+          name: lang
+          schema:
+            type: string
+            enum: [en, fr]
+            default: en
+          description: Target language for role titles and instructions.
+      responses:
+        "200":
+          description: Array of role presets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RolePreset'
+
+  # ==========================================================================
+  # CLI Container Fleet (SeaORM CRUD)
+  # ==========================================================================
+  /api/instances:
+    get:
+      summary: List all registered CLI instances
+      description: Retrieves all instances from the database with live reachability probe status.
+      responses:
+        "200":
+          description: List of CLI instances
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Instance'
+    post:
+      summary: Register a new CLI instance
+      description: Persists a new CLI agent instance into the SeaORM database.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateInstanceRequest'
+      responses:
+        "201":
+          description: Instance registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Instance'
+
+  /api/instances/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+        description: Unique UUID of the CLI instance.
+    get:
+      summary: Get instance details
+      responses:
+        "200":
+          description: Instance details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Instance'
+        "404":
+          description: Instance not found
+    put:
+      summary: Update instance configuration or assigned role
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateInstanceRequest'
+      responses:
+        "200":
+          description: Instance updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Instance'
+        "404":
+          description: Instance not found
+    delete:
+      summary: Delete an instance
+      responses:
+        "200":
+          description: Instance removed from database
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: boolean
+                    example: true
+
+  /api/instances/{id}/auth:
+    post:
+      summary: Perform web-based container authentication
+      description: Manages Device Code, OAuth URLs, or API key injection directly into the container.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthRequest'
+      responses:
+        "200":
+          description: Authentication response or status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+
+  /api/instances/{id}/onboard:
+    post:
+      summary: Initialize agent identity and role instructions
+      description: Sends structured identity prompt and collaboration rules into the CLI agent.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OnboardRequest'
+      responses:
+        "200":
+          description: Agent initialization result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  instance_id:
+                    type: string
+                    format: uuid
+                  name:
+                    type: string
+                  role:
+                    type: string
+                  onboarding_prompt:
+                    type: string
+                  reply:
+                    type: string
+
+  # ==========================================================================
+  # Native Interactive Terminal (WebSocket & Direct PTY)
+  # ==========================================================================
+  /ws/instances/{id}/terminal:
+    get:
+      summary: WebSocket streaming native tmux ANSI terminal
+      description: |
+        Upgrades to a bi-directional WebSocket connection. Streams live ANSI terminal frames
+        captured directly from the agent's tmux session and receives raw keyboard input
+        (Enter, arrows, Backspace, Ctrl+C).
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "101":
+          description: Switching protocols to WebSocket
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TerminalWsMessage'
+
+  # ==========================================================================
+  # Multi-Agent Orchestration Channels
+  # ==========================================================================
+  /api/orchestration/channels:
+    get:
+      summary: List orchestration channels
+      responses:
+        "200":
+          description: Array of active orchestration channels
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Channel'
+    post:
+      summary: Create an orchestration channel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateChannelRequest'
+      responses:
+        "201":
+          description: Channel created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Channel'
+
+  /api/orchestration/channels/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get channel details with participants
+      responses:
+        "200":
+          description: Channel details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Channel'
+    put:
+      summary: Update channel metadata, participants, or retention policy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateChannelRequest'
+      responses:
+        "200":
+          description: Channel updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Channel'
+    delete:
+      summary: Delete channel and all its messages
+      responses:
+        "200":
+          description: Channel deleted
+
+  /api/orchestration/channels/{id}/messages:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get channel message history
+      responses:
+        "200":
+          description: Historical messages ordered chronologically
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ChannelMessage'
+    post:
+      summary: Publish message to channel
+      description: Posts a message to the channel. If auto_dispatch is true and @AgentName is mentioned, invokes the target agent and publishes its response.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PublishMessageRequest'
+      responses:
+        "200":
+          description: Published message and triggered agent replies
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublishMessageResponse'
+
+  /api/orchestration/channels/{id}/publish:
+    post:
+      summary: Publish message alias endpoint
+      description: Alias to POST /api/orchestration/channels/{id}/messages.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PublishMessageRequest'
+      responses:
+        "200":
+          description: Published message and triggered agent replies
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublishMessageResponse'
+
+  /api/orchestration/channels/{id}/prune:
+    post:
+      summary: Manually trigger channel message retention pruning
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Count of pruned messages
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  channel_id:
+                    type: string
+                    format: uuid
+                  retention_days:
+                    type: integer
+                  max_messages:
+                    type: integer
+                  pruned:
+                    type: integer
+
+  /api/orchestration/channels/{id}/export:
+    get:
+      summary: Export channel conversation history as Markdown
+      description: Returns complete conversation transcript formatted in GitHub Flavored Markdown.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Markdown transcript
+          content:
+            text/markdown:
+              schema:
+                type: string
+
+  /ws/orchestration/{id}:
+    get:
+      summary: Real-time channel message WebSocket bus
+      description: Broadcasts all newly published messages and agent replies on channel {id} in real time.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "101":
+          description: Switching protocols to WebSocket
+
+  # ==========================================================================
+  # Git Workspace Operations
+  # ==========================================================================
+  /api/git/status:
+    get:
+      summary: Get Git workspace status
+      description: Inspects working directory, detects active branch, uncommitted modified files, and unified diff.
+      parameters:
+        - in: query
+          name: cwd
+          schema:
+            type: string
+          description: Target directory path (defaults to DEFAULT_CWD).
+      responses:
+        "200":
+          description: Git status summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitStatusResponse'
+
+  /api/git/commit:
+    post:
+      summary: Stage all changes and commit
+      description: Executes git add -A followed by git commit -m "{message}".
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message]
+              properties:
+                message:
+                  type: string
+                  example: "feat: add user authentication layer"
+                cwd:
+                  type: string
+      responses:
+        "200":
+          description: Commit result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  committed:
+                    type: boolean
+                    example: true
+                  output:
+                    type: string
+
+  /api/git/revert:
+    post:
+      summary: Revert a specific file or all modified files
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  description: Path to file to revert (if omitted, reverts entire repository).
+                cwd:
+                  type: string
+      responses:
+        "200":
+          description: Revert result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  reverted:
+                    type: boolean
+                    example: true
+                  output:
+                    type: string
+
+  # ==========================================================================
+  # Unified Agent Invocation & Tmux Capture
+  # ==========================================================================
+  /api/agents/ask:
+    post:
+      summary: Query an agent CLI directly
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [prompt]
+              properties:
+                instance_id:
+                  type: string
+                  format: uuid
+                name:
+                  type: string
+                kind:
+                  type: string
+                  enum: [codex, antigravity, claude, goose]
+                prompt:
+                  type: string
+                mode:
+                  type: string
+                  enum: [auto, rpc, tmux]
+                  default: auto
+      responses:
+        "200":
+          description: Agent response text
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  reply:
+                    type: string
+
+  /api/agents/tmux:
+    post:
+      summary: Capture live tmux pane output
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                instance_id:
+                  type: string
+                  format: uuid
+                kind:
+                  type: string
+                session:
+                  type: string
+                  default: the_new_user
+                ansi:
+                  type: boolean
+                  default: true
+      responses:
+        "200":
+          description: Captured pane output
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  output:
+                    type: string
+
+components:
+  schemas:
+    ConfigResponse:
+      type: object
+      properties:
+        default_cwd:
+          type: string
+          example: /srv
+        database_backend:
+          type: string
+          example: SQLite
+        claude_rpc_url:
+          type: string
+        antigravity_rpc_url:
+          type: string
+        codex_ws_url:
+          type: string
+        goose_ws_url:
+          type: string
+
+    RolePreset:
+      type: object
+      properties:
+        id:
+          type: string
+          example: architect
+        label:
+          type: string
+          example: "🏗️ Software Architect"
+        prompt:
+          type: string
+          description: Default role system prompt.
+
+    Instance:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: "Claude Code #1 (Primary)"
+        kind:
+          type: string
+          enum: [codex, antigravity, claude, goose]
+        transport:
+          type: string
+          enum: [ws, http-rpc, unix-ws, direct]
+        endpoint_url:
+          type: string
+          example: http://127.0.0.1:13285/rpc
+        bridge_url:
+          type: string
+          nullable: true
+        tmux_session:
+          type: string
+          example: the_new_user
+        default_cwd:
+          type: string
+          example: /srv
+        role:
+          type: string
+          example: architect
+        role_prompt:
+          type: string
+        online:
+          type: boolean
+          example: true
+
+    CreateInstanceRequest:
+      type: object
+      required: [name, kind, transport, endpoint_url]
+      properties:
+        name:
+          type: string
+          example: "Antigravity #2 (Reviewer)"
+        kind:
+          type: string
+          enum: [codex, antigravity, claude, goose]
+        transport:
+          type: string
+          enum: [ws, http-rpc, unix-ws, direct]
+        endpoint_url:
+          type: string
+          example: http://127.0.0.1:13286/rpc
+        bridge_url:
+          type: string
+        secret:
+          type: string
+        tmux_session:
+          type: string
+          default: the_new_user
+        default_cwd:
+          type: string
+          default: /srv
+        role:
+          type: string
+          default: developer
+        role_prompt:
+          type: string
+
+    UpdateInstanceRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        endpoint_url:
+          type: string
+        bridge_url:
+          type: string
+        secret:
+          type: string
+        tmux_session:
+          type: string
+        default_cwd:
+          type: string
+        role:
+          type: string
+        role_prompt:
+          type: string
+
+    AuthRequest:
+      type: object
+      required: [action]
+      properties:
+        action:
+          type: string
+          enum: [status, device_start, api_key, oauth_callback]
+        api_key:
+          type: string
+        callback_url:
+          type: string
+
+    AuthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: authenticated
+        device_code:
+          type: string
+        user_code:
+          type: string
+        verification_uri:
+          type: string
+        message:
+          type: string
+
+    OnboardRequest:
+      type: object
+      properties:
+        channel_name:
+          type: string
+          default: general
+        custom_prompt:
+          type: string
+        lang:
+          type: string
+          enum: [en, fr]
+          default: en
+
+    TerminalWsMessage:
+      type: object
+      description: WebSocket message payload for terminal streaming and keystrokes.
+      properties:
+        type:
+          type: string
+          enum: [screen, raw, resize, ping, pong]
+        data:
+          type: string
+        special:
+          type: boolean
+
+    Channel:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: architecture-team
+        description:
+          type: string
+        retention_days:
+          type: integer
+          example: 30
+        max_messages:
+          type: integer
+          example: 200
+        participant_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+
+    CreateChannelRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          example: feature-auth
+        description:
+          type: string
+        retention_days:
+          type: integer
+          default: 30
+        max_messages:
+          type: integer
+          default: 200
+        participant_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+
+    UpdateChannelRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        retention_days:
+          type: integer
+        max_messages:
+          type: integer
+        participant_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+
+    ChannelMessage:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        channel_id:
+          type: string
+          format: uuid
+        sender_name:
+          type: string
+          example: "User"
+        sender_kind:
+          type: string
+          example: "user"
+        recipient_name:
+          type: string
+          example: "@Claude Code #1 (Primary)"
+        content:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    PublishMessageRequest:
+      type: object
+      required: [content]
+      properties:
+        sender_name:
+          type: string
+          default: "User"
+        sender_kind:
+          type: string
+          default: "user"
+        recipient_name:
+          type: string
+          default: "@all"
+        content:
+          type: string
+        auto_dispatch:
+          type: boolean
+          default: true
+
+    PublishMessageResponse:
+      type: object
+      properties:
+        message_id:
+          type: string
+          format: uuid
+        replies:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChannelMessage'
+
+    GitStatusResponse:
+      type: object
+      properties:
+        branch:
+          type: string
+          example: web
+        files:
+          type: array
+          items:
+            type: object
+            properties:
+              status:
+                type: string
+                example: " M"
+              path:
+                type: string
+                example: src/main.rs
+        diff:
+          type: string
+          description: Output of git diff HEAD.
+        recent_commits:
+          type: array
+          items:
+            type: string
+            example: "86ddc95 feat(web-ui): default English with i18n switcher"
