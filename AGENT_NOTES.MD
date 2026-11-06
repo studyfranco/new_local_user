@@ -153,6 +153,8 @@
   - **Startup Reconciliation & Self-Healing (`defaults.rs`)**:
     - Defined `CANONICAL_AVAILABLE_LANGUAGES` pre-seeding `en` (default), `fr`, and `de`.
     - Implemented `ensure_available_languages_seeded(&db)` executed at startup in `ensure_database_defaults`.
+    - Removed hardcoded `let packs = [...]` in `ensure_language_packs_seeded`, replacing it with dynamic iteration over `available_language::Entity` query from the database.
+    - Added `canonical_lang_dict(code)` mapping canonical dictionaries.
     - Implemented `list_available_languages(&db)` and `get_or_create_available_language(&db, code, name, native_name)`.
   - **REST API Endpoints**:
     - Added `GET /api/languages/available` returning lightweight language records.

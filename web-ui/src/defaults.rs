@@ -562,6 +562,15 @@ fn default_lang_dict_de() -> &'static str {
     }"#
 }
 
+/// Returns the canonical fallback JSON dictionary string for a given language code.
+pub fn canonical_lang_dict(code: &str) -> &'static str {
+    match code {
+        "fr" => default_lang_dict_fr(),
+        "de" => default_lang_dict_de(),
+        _ => default_lang_dict_en(),
+    }
+}
+
 /// Checks the `role_prompts` table and inserts any missing canonical prompts.
 ///
 /// Returns the number of missing prompts that were inserted into the database.
@@ -598,29 +607,31 @@ pub async fn ensure_role_prompts_seeded(db: &DatabaseConnection) -> Result<usize
     Ok(added)
 }
 
-/// Checks the `language_packs` table and inserts any missing canonical packs.
+/// Checks the `language_packs` table and inserts any missing packs for languages available in the database.
 ///
 /// Returns the number of missing language packs that were inserted into the database.
 pub async fn ensure_language_packs_seeded(db: &DatabaseConnection) -> Result<usize, DbErr> {
     let mut added = 0;
     let now = Utc::now();
-    let packs = [
-        ("en", "English", default_lang_dict_en()),
-        ("fr", "Français", default_lang_dict_fr()),
-        ("de", "Deutsch", default_lang_dict_de()),
-    ];
 
-    for (lang, name, dict) in packs {
+    // Query active available languages dynamically from the database
+    let available_langs = available_language::Entity::find()
+        .filter(available_language::Column::IsActive.eq(true))
+        .all(db)
+        .await?;
+
+    for avail in available_langs {
         let exists = language_pack::Entity::find()
-            .filter(language_pack::Column::Lang.eq(lang))
+            .filter(language_pack::Column::Lang.eq(&avail.code))
             .one(db)
             .await?;
 
         if exists.is_none() {
+            let dict = canonical_lang_dict(&avail.code);
             let model = language_pack::ActiveModel {
                 id: Set(Uuid::new_v4()),
-                lang: Set(lang.to_string()),
-                name: Set(name.to_string()),
+                lang: Set(avail.code),
+                name: Set(avail.native_name),
                 dictionary_json: Set(dict.to_string()),
                 created_at: Set(now),
                 updated_at: Set(now),
