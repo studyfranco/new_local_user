@@ -32,9 +32,11 @@ pub async fn get_role_label(
     defaults::get_or_create_role_label(db, role, lang).await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn connect_and_migrate(
     database_url: &str,
     default_codex_ws: &str,
+    default_codex_bridge: &str,
     default_goose_ws: &str,
     default_goose_secret: Option<String>,
     default_claude_rpc: &str,
@@ -84,7 +86,7 @@ pub async fn connect_and_migrate(
                 kind: Set("codex".to_string()),
                 transport: Set("ws".to_string()),
                 endpoint_url: Set(default_codex_ws.to_string()),
-                bridge_url: Set(Some("http://codex:3287/rpc".to_string())),
+                bridge_url: Set(Some(default_codex_bridge.to_string())),
                 secret_token: Set(None),
                 default_cwd: Set(default_cwd.to_string()),
                 role: Set("developer".to_string()),

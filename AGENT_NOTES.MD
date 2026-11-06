@@ -208,6 +208,25 @@
     - Tested index existence and cache invalidation in `main.rs`.
     - Verified all 14 tests passing across workspace.
 
+#### 13. Multi-CLI Tmux Session Isolation (`agy` & `codex`) & Chromium CDP E2E Live Terminal Verification
+* **Finding**: `agent_bridge` previously hardcoded the tmux session name to `"the_new_user"`, preventing multiple CLI agents (such as Antigravity `agy` and OpenAI `codex`) from running in distinct dedicated tmux sessions simultaneously. Furthermore, rapid switching between terminal instances in `app.js` could cause stale `onclose` events from previous sockets to overwrite the status of newly opened WebSockets.
+* **Resolution**:
+  - **Configurable `TMUX_SESSION` in `agent_bridge` (`src/bin/agent_bridge.rs`)**:
+    - Added `tmux_session` to `BridgeState`, configured via `env::var("TMUX_SESSION").or_else(|_| env::var("AGENT_TMUX_SESSION"))` (falling back to `"the_new_user"`).
+    - `initialize` returns `"tmuxSession": state.tmux_session`.
+    - `tmux/capture`, `tmux/send_keys`, `tmux/send_raw`, and `run_cli_prompt` target the configured session by default.
+  - **Configurable Codex Bridge URL in Hub (`db.rs` & `main.rs`)**:
+    - Supported `CODEX_RPC_URL` / `CODEX_BRIDGE_URL` in `connect_and_migrate` to allow pointing Codex directly to local bridge instances.
+  - **Terminal WebSocket Race Condition Guard in Frontend (`app.js`)**:
+    - Detached `onclose`, `onerror`, and `onmessage` handlers before closing prior sockets in `connectNativeTerminal()` and `closeModal()`.
+    - Guarded status updates with `if (state.terminalWs === ws)` to guarantee socket isolation during instance switching.
+  - **Automated Chromium CDP Verification (`tests/chromium_tmux_cli_test.rs`)**:
+    - Created dedicated end-to-end integration test creating live `tmux` sessions (`agy_session` with `agy --version`, `codex_session` with `codex ready`).
+    - Spawned bridges on ports `13296` (`antigravity`) and `13297` (`codex`).
+    - Launched headless Chromium over CDP, connected to both instances, sent interactive terminal commands via PTY, asserted live execution feedback, and captured screenshots:
+      - `chromium_14_agy_tmux_connected.png`
+      - `chromium_15_codex_tmux_connected.png`
+
 ---
 
 ### Verification Summary
@@ -220,5 +239,6 @@
 | Unit Tests (`agent-bridge`) | `cargo test --bin agent-bridge` | **1 passed, 0 failed** |
 | Unit Tests (`agent-hub`) | `cargo test --bin agent-hub` | **8 passed, 0 failed** |
 | Frontend Syntax & OpenAPI | `cargo test --test frontend_syntax_test` | **4 passed, 0 failed** |
-| Chromium CDP E2E | `cargo test --test chromium_full_scale_test` | **1 passed, 0 failed** |
-| **Total Test Suite** | `cargo test` | **14 passed, 0 failed** |
+| Chromium CDP E2E (Full Scale) | `cargo test --test chromium_full_scale_test` | **1 passed, 0 failed** |
+| Chromium CDP E2E (Tmux CLIs) | `cargo test --test chromium_tmux_cli_test` | **1 passed, 0 failed** |
+| **Total Test Suite** | `cargo test` | **15 passed, 0 failed** |

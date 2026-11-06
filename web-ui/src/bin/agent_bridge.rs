@@ -22,6 +22,7 @@ struct BridgeState {
     agent_name: String,
     secret: Option<String>,
     cli_web_url: String,
+    tmux_session: String,
     http_client: reqwest::Client,
 }
 
@@ -68,10 +69,15 @@ async fn main() {
         }
     };
 
+    let tmux_session = env::var("TMUX_SESSION")
+        .or_else(|_| env::var("AGENT_TMUX_SESSION"))
+        .unwrap_or_else(|_| "the_new_user".to_string());
+
     let state = Arc::new(BridgeState {
         agent_name: agent_name.clone(),
         secret,
         cli_web_url,
+        tmux_session,
         http_client,
     });
 
@@ -203,7 +209,7 @@ async fn handle_rpc(
         "initialize" => json!({
             "agent": state.agent_name,
             "protocolVersion": 1,
-            "tmuxSession": "the_new_user",
+            "tmuxSession": state.tmux_session,
             "cliWebUrl": state.cli_web_url,
         }),
         "auth/status" => {
@@ -226,7 +232,7 @@ async fn handle_rpc(
                     detail.contains("Logged in") && !detail.contains("Not logged in");
                 json!({ "authenticated": authenticated, "detail": detail })
             } else {
-                let pane = capture_tmux("the_new_user", 80).await;
+                let pane = capture_tmux(&state.tmux_session, 80).await;
                 let (detected_url, _) = extract_urls_and_code(&pane);
                 let authenticated = pane.contains("Authenticated as")
                     || pane.contains("Antigravity server is running")
@@ -264,7 +270,7 @@ async fn handle_rpc(
                     "raw": raw
                 })
             } else {
-                let raw = capture_tmux("the_new_user", 80).await;
+                let raw = capture_tmux(&state.tmux_session, 80).await;
                 let (url, code) = extract_urls_and_code(&raw);
                 json!({
                     "status": "pending",
@@ -315,27 +321,27 @@ async fn handle_rpc(
                     Err(e) => json!({ "authenticated": false, "detail": e.to_string() }),
                 }
             } else {
-                let out = send_tmux("the_new_user", cb_url).await;
+                let out = send_tmux(&state.tmux_session, cb_url).await;
                 json!({ "authenticated": true, "detail": out })
             }
         }
         "tmux/capture" => {
             let lines = params["lines"].as_u64().unwrap_or(120) as u32;
-            let session = params["session"].as_str().unwrap_or("the_new_user");
+            let session = params["session"].as_str().unwrap_or(&state.tmux_session);
             let ansi = params["ansi"].as_bool().unwrap_or(false);
             let out = capture_tmux_ext(session, lines, ansi).await;
             json!({ "output": out })
         }
         "tmux/send_keys" => {
             let text = params["text"].as_str().unwrap_or("");
-            let session = params["session"].as_str().unwrap_or("the_new_user");
+            let session = params["session"].as_str().unwrap_or(&state.tmux_session);
             let out = send_tmux(session, text).await;
             json!({ "output": out })
         }
         "tmux/send_raw" => {
             let data = params["data"].as_str().unwrap_or("");
             let special = params["special"].as_bool().unwrap_or(false);
-            let session = params["session"].as_str().unwrap_or("the_new_user");
+            let session = params["session"].as_str().unwrap_or(&state.tmux_session);
             let out = send_tmux_raw(session, data, special).await;
             json!({ "output": out })
         }
@@ -343,7 +349,8 @@ async fn handle_rpc(
             let prompt = params["prompt"].as_str().unwrap_or("");
             let cwd = params["cwd"].as_str().unwrap_or("/srv");
             let mode = params["mode"].as_str().unwrap_or("auto");
-            let reply = run_cli_prompt(&state.agent_name, prompt, cwd, mode).await;
+            let reply =
+                run_cli_prompt(&state.agent_name, &state.tmux_session, prompt, cwd, mode).await;
             json!({ "reply": reply, "agent": state.agent_name })
         }
         _ => json!({ "status": "ok", "agent": state.agent_name }),
@@ -355,9 +362,15 @@ async fn handle_rpc(
     )
 }
 
-async fn run_cli_prompt(agent_name: &str, prompt: &str, cwd: &str, mode: &str) -> String {
+async fn run_cli_prompt(
+    agent_name: &str,
+    tmux_session: &str,
+    prompt: &str,
+    cwd: &str,
+    mode: &str,
+) -> String {
     if mode == "tmux" {
-        return send_tmux("the_new_user", prompt).await;
+        return send_tmux(tmux_session, prompt).await;
     }
     let workdir = if FsPath::new(cwd).is_dir() {
         cwd
@@ -398,7 +411,7 @@ async fn run_cli_prompt(agent_name: &str, prompt: &str, cwd: &str, mode: &str) -
                 .output()
                 .await
         }
-        _ => return send_tmux("the_new_user", prompt).await,
+        _ => return send_tmux(tmux_session, prompt).await,
     };
 
     if let Ok(o) = out {
@@ -407,7 +420,7 @@ async fn run_cli_prompt(agent_name: &str, prompt: &str, cwd: &str, mode: &str) -
             return s;
         }
     }
-    send_tmux("the_new_user", prompt).await
+    send_tmux(tmux_session, prompt).await
 }
 
 async fn proxy_cli_web_root(

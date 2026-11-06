@@ -282,6 +282,9 @@ async fn main() {
         .filter(|s| !s.trim().is_empty());
 
     let codex_ws_url = env::var("CODEX_WS_URL").unwrap_or_else(|_| "ws://codex:4500".to_string());
+    let codex_bridge_url = env::var("CODEX_RPC_URL")
+        .or_else(|_| env::var("CODEX_BRIDGE_URL"))
+        .unwrap_or_else(|_| "http://codex:3287/rpc".to_string());
     let codex_unix_socket =
         env::var("CODEX_UNIX_SOCKET").unwrap_or_else(|_| "/run/codex/app.sock".to_string());
 
@@ -298,6 +301,7 @@ async fn main() {
     let db = match db::connect_and_migrate(
         &database_url,
         &codex_ws_url,
+        &codex_bridge_url,
         &goose_ws_url,
         goose_secret.clone(),
         &claude_rpc_url,
@@ -365,10 +369,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/", get(serve_index))
         .route("/style.css", get(serve_css))
         .route("/app.js", get(serve_js))
-        .route(
-            "/default_translate.json",
-            get(serve_default_translate_json),
-        )
+        .route("/default_translate.json", get(serve_default_translate_json))
         .route("/healthz", get(serve_healthz))
         .route("/ready", get(serve_ready))
         .route("/api/config", get(serve_config))
@@ -3265,6 +3266,7 @@ mod tests {
         let db = db::connect_and_migrate(
             "sqlite::memory:",
             "ws://127.0.0.1:14500",
+            "http://127.0.0.1:13287/rpc",
             "ws://127.0.0.1:13284/acp",
             None,
             "http://127.0.0.1:13285/rpc",

@@ -1038,6 +1038,9 @@
         if (!inst) return;
 
         if (state.terminalWs) {
+            state.terminalWs.onclose = null;
+            state.terminalWs.onerror = null;
+            state.terminalWs.onmessage = null;
             state.terminalWs.close();
             state.terminalWs = null;
         }
@@ -1053,12 +1056,15 @@
         state.terminalWs = ws;
 
         ws.onopen = () => {
-            statusEl.textContent = t("connectedTo", inst.name);
-            statusEl.className = "badge badge-online";
-            viewport.focus();
+            if (state.terminalWs === ws) {
+                statusEl.textContent = t("connectedTo", inst.name);
+                statusEl.className = "badge badge-online";
+                viewport.focus();
+            }
         };
 
         ws.onmessage = (ev) => {
+            if (state.terminalWs !== ws) return;
             try {
                 const msg = JSON.parse(ev.data);
                 if (msg.type === "screen") {
@@ -1071,8 +1077,10 @@
         };
 
         ws.onclose = () => {
-            statusEl.textContent = t("disconnected");
-            statusEl.className = "badge badge-offline";
+            if (state.terminalWs === ws) {
+                statusEl.textContent = t("disconnected");
+                statusEl.className = "badge badge-offline";
+            }
         };
     }
 
@@ -1090,6 +1098,9 @@
         if (modalName === "terminal-modal" || modalName === "terminal") {
             $("native-terminal-drawer").classList.add("hidden");
             if (state.terminalWs) {
+                state.terminalWs.onclose = null;
+                state.terminalWs.onerror = null;
+                state.terminalWs.onmessage = null;
                 state.terminalWs.close();
                 state.terminalWs = null;
             }

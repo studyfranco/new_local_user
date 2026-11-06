@@ -256,12 +256,19 @@ async fn full_scale_chromium_and_local_instances_e2e() {
     .await;
 
     // Verify local Claude instance is online (via our real local agent-bridge on 13285)
-    let claude_online = cdp_eval(
-        &mut cdp_ws,
-        101,
-        "(() => { const c = window.state.instances.find(i => i.kind === 'claude'); return c ? c.online : false; })()",
-    )
-    .await;
+    let mut claude_online = json!(false);
+    for i in 0..20 {
+        claude_online = cdp_eval(
+            &mut cdp_ws,
+            101 + i,
+            "(() => { const c = window.state.instances.find(i => i.kind === 'claude'); return c ? c.online : false; })()",
+        )
+        .await;
+        if claude_online == json!(true) {
+            break;
+        }
+        sleep(Duration::from_millis(200)).await;
+    }
     assert_eq!(
         claude_online,
         json!(true),
