@@ -1,5 +1,6 @@
 #![recursion_limit = "256"]
 
+pub mod cache;
 pub mod db;
 pub mod defaults;
 pub mod entities;
@@ -10,17 +11,18 @@ pub mod migration;
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 use axum::{
+    Json, Router,
     body::Body,
     extract::{
-        ws::{Message as AxumWsMessage, WebSocket, WebSocketUpgrade},
         Path, Query, State,
+        ws::{Message as AxumWsMessage, WebSocket, WebSocketUpgrade},
     },
     http::{HeaderMap, Method, Response, StatusCode},
     response::{Html, IntoResponse},
     routing::{any, get, post, put},
-    Json, Router,
 };
 use bytes::Bytes;
+use cache::{CachedLanguagePack, LanguageCache};
 use chrono::Utc;
 use entities::{
     available_language, channel_message, cli_instance, language_pack, orchestration_channel,
@@ -32,19 +34,14 @@ use sea_orm::{
     Set,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::{
-    collections::HashMap,
-    env,
-    net::SocketAddr,
-    path::Path as FsPath,
-    sync::Arc,
-    time::Duration,
+    collections::HashMap, env, net::SocketAddr, path::Path as FsPath, sync::Arc, time::Duration,
 };
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::{TcpStream, UnixStream},
-    sync::{broadcast, RwLock},
+    sync::{RwLock, broadcast},
     time::timeout,
 };
 use tokio_tungstenite::{
@@ -58,6 +55,7 @@ use uuid::Uuid;
 const INDEX_HTML: &str = include_str!("../static/index.html");
 const STYLE_CSS: &str = include_str!("../static/style.css");
 const APP_JS: &str = include_str!("../static/app.js");
+const DEFAULTS_JS: &str = include_str!("../static/defaults.js");
 
 #[derive(Clone)]
 pub struct AppState {
@@ -73,6 +71,7 @@ pub struct AppState {
     pub default_cwd: String,
     pub http_client: reqwest::Client,
     pub channel_hubs: Arc<RwLock<HashMap<Uuid, broadcast::Sender<String>>>>,
+    pub lang_cache: Arc<tokio::sync::RwLock<LanguageCache>>,
 }
 
 impl AppState {
@@ -282,8 +281,7 @@ async fn main() {
         .ok()
         .filter(|s| !s.trim().is_empty());
 
-    let codex_ws_url =
-        env::var("CODEX_WS_URL").unwrap_or_else(|_| "ws://codex:4500".to_string());
+    let codex_ws_url = env::var("CODEX_WS_URL").unwrap_or_else(|_| "ws://codex:4500".to_string());
     let codex_unix_socket =
         env::var("CODEX_UNIX_SOCKET").unwrap_or_else(|_| "/run/codex/app.sock".to_string());
 
@@ -339,6 +337,7 @@ async fn main() {
         default_cwd,
         http_client,
         channel_hubs: Arc::new(RwLock::new(HashMap::new())),
+        lang_cache: Arc::new(tokio::sync::RwLock::new(LanguageCache::new())),
     });
 
     let app = build_router(state);
@@ -366,6 +365,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/", get(serve_index))
         .route("/style.css", get(serve_css))
         .route("/app.js", get(serve_js))
+        .route("/defaults.js", get(serve_defaults_js))
         .route("/healthz", get(serve_healthz))
         .route("/ready", get(serve_ready))
         .route("/api/config", get(serve_config))
@@ -394,17 +394,22 @@ pub fn build_router(state: Arc<AppState>) -> Router {
                 .put(update_language_pack_by_lang)
                 .delete(delete_language_pack_by_lang),
         )
-        .route(
-            "/api/instances",
-            get(list_instances).post(create_instance),
-        )
+        .route("/api/instances", get(list_instances).post(create_instance))
         .route(
             "/api/instances/{id}",
-            get(get_instance).put(update_instance).delete(delete_instance),
+            get(get_instance)
+                .put(update_instance)
+                .delete(delete_instance),
         )
         .route("/api/instances/{id}/auth", post(instance_auth_handler))
-        .route("/api/instances/{id}/onboard", post(onboard_instance_handler))
-        .route("/ws/instances/{id}/terminal", get(ws_instance_terminal_handler))
+        .route(
+            "/api/instances/{id}/onboard",
+            post(onboard_instance_handler),
+        )
+        .route(
+            "/ws/instances/{id}/terminal",
+            get(ws_instance_terminal_handler),
+        )
         .route("/api/instances/{id}/web", any(proxy_instance_web_root))
         .route(
             "/api/instances/{id}/web/{*path}",
@@ -462,6 +467,13 @@ async fn serve_js() -> impl IntoResponse {
     (
         [("content-type", "application/javascript; charset=utf-8")],
         APP_JS,
+    )
+}
+
+async fn serve_defaults_js() -> impl IntoResponse {
+    (
+        [("content-type", "application/javascript; charset=utf-8")],
+        DEFAULTS_JS,
     )
 }
 
@@ -528,7 +540,7 @@ async fn probe_endpoint(transport: &str, raw_url: &str, default_port: u16) -> Ta
                 return TargetHealth {
                     online: false,
                     detail: format!("Invalid URL: {}", e),
-                }
+                };
             }
         };
         let host = match parsed.host_str() {
@@ -537,7 +549,7 @@ async fn probe_endpoint(transport: &str, raw_url: &str, default_port: u16) -> Ta
                 return TargetHealth {
                     online: false,
                     detail: "Missing host".into(),
-                }
+                };
             }
         };
         let port = parsed.port_or_known_default().unwrap_or(default_port);
@@ -677,7 +689,7 @@ async fn create_instance(
         .as_deref()
         .map(|r| r.trim().to_lowercase())
         .filter(|r| !r.is_empty())
-        .unwrap_or_else(|| "developer".to_string());
+        .unwrap_or_else(|| defaults::DEFAULT_ROLE.to_string());
     let role_prompt = if let Some(p) = req
         .role_prompt
         .as_deref()
@@ -686,7 +698,7 @@ async fn create_instance(
     {
         p
     } else {
-        db::get_role_prompt(&state.db, &role, "en")
+        db::get_role_prompt(&state.db, &role, defaults::DEFAULT_LANG)
             .await
             .unwrap_or_else(|_| format!("You are the {role} agent."))
     };
@@ -726,13 +738,13 @@ async fn update_instance(
             return (
                 StatusCode::NOT_FOUND,
                 Json(json!({ "error": "Instance not found" })),
-            )
+            );
         }
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({ "error": e.to_string() })),
-            )
+            );
         }
     };
 
@@ -776,9 +788,10 @@ async fn update_instance(
                 .map(|s| s.trim().is_empty())
                 .unwrap_or(true)
             {
-                active.role_prompt = Set(db::get_role_prompt(&state.db, &r, "en")
-                    .await
-                    .unwrap_or_else(|_| format!("You are the {r} agent.")));
+                active.role_prompt =
+                    Set(db::get_role_prompt(&state.db, &r, defaults::DEFAULT_LANG)
+                        .await
+                        .unwrap_or_else(|_| format!("You are the {r} agent.")));
             }
         }
     }
@@ -828,13 +841,13 @@ async fn instance_auth_handler(
             return (
                 StatusCode::NOT_FOUND,
                 Json(json!({ "error": "Instance not found" })),
-            )
+            );
         }
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({ "error": e.to_string() })),
-            )
+            );
         }
     };
 
@@ -858,7 +871,7 @@ async fn instance_auth_handler(
             return (
                 StatusCode::BAD_REQUEST,
                 Json(json!({ "error": format!("Unknown auth action: {}", other) })),
-            )
+            );
         }
     };
 
@@ -904,53 +917,53 @@ async fn instance_auth_handler(
         && let Ok((mut ws, _)) = connect_async(&inst.endpoint_url).await
     {
         let _ = ws
+            .send(TungMessage::Text(
+                json!({
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "initialize",
+                    "params": { "clientInfo": { "name": "agent-hub-auth", "version": "1.0.0" } }
+                })
+                .to_string()
+                .into(),
+            ))
+            .await;
+        let _ = ws.next().await;
+
+        if req.action == "api_key" {
+            let key = req.value.unwrap_or_default();
+            let _ = ws
                 .send(TungMessage::Text(
                     json!({
                         "jsonrpc": "2.0",
-                        "id": 1,
-                        "method": "initialize",
-                        "params": { "clientInfo": { "name": "agent-hub-auth", "version": "1.0.0" } }
+                        "id": 2,
+                        "method": "account/login/start",
+                        "params": { "type": "apiKey", "apiKey": key }
                     })
                     .to_string()
                     .into(),
                 ))
                 .await;
-            let _ = ws.next().await;
-
-            if req.action == "api_key" {
-                let key = req.value.unwrap_or_default();
-                let _ = ws
-                    .send(TungMessage::Text(
-                        json!({
-                            "jsonrpc": "2.0",
-                            "id": 2,
-                            "method": "account/login/start",
-                            "params": { "type": "apiKey", "apiKey": key }
-                        })
-                        .to_string()
-                        .into(),
-                    ))
-                    .await;
-                return (
-                    StatusCode::OK,
-                    Json(json!({
-                        "instance_id": id,
-                        "name": inst.name,
-                        "kind": inst.kind,
-                        "auth": { "authenticated": true, "detail": "API key sent to codex app-server" }
-                    })),
-                );
-            } else {
-                return (
-                    StatusCode::OK,
-                    Json(json!({
-                        "instance_id": id,
-                        "name": inst.name,
-                        "kind": inst.kind,
-                        "auth": { "authenticated": true, "detail": "codex app-server reachable via WebSocket" }
-                    })),
-                );
-            }
+            return (
+                StatusCode::OK,
+                Json(json!({
+                    "instance_id": id,
+                    "name": inst.name,
+                    "kind": inst.kind,
+                    "auth": { "authenticated": true, "detail": "API key sent to codex app-server" }
+                })),
+            );
+        } else {
+            return (
+                StatusCode::OK,
+                Json(json!({
+                    "instance_id": id,
+                    "name": inst.name,
+                    "kind": inst.kind,
+                    "auth": { "authenticated": true, "detail": "codex app-server reachable via WebSocket" }
+                })),
+            );
+        }
     }
 
     (
@@ -1148,13 +1161,13 @@ async fn update_channel(
             return (
                 StatusCode::NOT_FOUND,
                 Json(json!({ "error": "Channel not found" })),
-            )
+            );
         }
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({ "error": e.to_string() })),
-            )
+            );
         }
     };
 
@@ -1270,13 +1283,13 @@ async fn publish_channel_message(
             return (
                 StatusCode::NOT_FOUND,
                 Json(json!({ "error": "Orchestration channel not found" })),
-            )
+            );
         }
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({ "error": e.to_string() })),
-            )
+            );
         }
     };
 
@@ -1299,7 +1312,7 @@ async fn publish_channel_message(
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({ "error": e })),
-            )
+            );
         }
     };
 
@@ -1351,7 +1364,7 @@ async fn publish_channel_message(
                 continue;
             }
             let role_instruction = if inst.role_prompt.trim().is_empty() {
-                db::get_role_prompt(&state.db, &inst.role, "en")
+                db::get_role_prompt(&state.db, &inst.role, defaults::DEFAULT_LANG)
                     .await
                     .unwrap_or_else(|_| format!("You are the {} agent.", inst.role))
             } else {
@@ -1359,10 +1372,17 @@ async fn publish_channel_message(
             };
             let prompt_for_agent = format!(
                 "[System — Identity & Role]\nAgent: {} (CLI: {}, Role: {})\nMission: {}\n\n---\n{}\n---\nReply on channel '{}' adhering to your role '{}' (you can mention another agent with @AgentName if needed):",
-                inst.name, inst.kind, inst.role, role_instruction, running_context, channel.name, inst.role
+                inst.name,
+                inst.kind,
+                inst.role,
+                role_instruction,
+                running_context,
+                channel.name,
+                inst.role
             );
 
-            if let Ok(reply_text) = ask_instance_model(&state, inst, &prompt_for_agent, None, "auto").await
+            if let Ok(reply_text) =
+                ask_instance_model(&state, inst, &prompt_for_agent, None, "auto").await
                 && let Ok(saved_reply) = persist_and_broadcast_channel_msg(
                     &state,
                     channel_id,
@@ -1373,7 +1393,8 @@ async fn publish_channel_message(
                 )
                 .await
             {
-                running_context.push_str(&format!("\n[Reply from {}]:\n{}\n", inst.name, reply_text));
+                running_context
+                    .push_str(&format!("\n[Reply from {}]:\n{}\n", inst.name, reply_text));
                 replies.push(saved_reply);
             }
         }
@@ -1587,8 +1608,15 @@ async fn resolve_instance(
             if let Some(by_name) = all.iter().find(|i| i.name.to_lowercase() == lower) {
                 return Some(by_name.clone());
             }
-            let normalized_kind = if lower == "agy" { "antigravity" } else { lower.as_str() };
-            if let Some(by_kind) = all.iter().find(|i| i.kind.to_lowercase() == normalized_kind) {
+            let normalized_kind = if lower == "agy" {
+                "antigravity"
+            } else {
+                lower.as_str()
+            };
+            if let Some(by_kind) = all
+                .iter()
+                .find(|i| i.kind.to_lowercase() == normalized_kind)
+            {
                 return Some(by_kind.clone());
             }
         }
@@ -1678,10 +1706,7 @@ async fn handle_agent_tmux(
         );
     };
 
-    let url = inst
-        .bridge_url
-        .as_deref()
-        .unwrap_or(&inst.endpoint_url);
+    let url = inst.bridge_url.as_deref().unwrap_or(&inst.endpoint_url);
 
     let payload = json!({
         "jsonrpc": "2.0",
@@ -1751,10 +1776,7 @@ async fn ask_http_rpc_peer(
     if let Some(err) = val.get("error") {
         return Err(err.to_string());
     }
-    Ok(val["result"]["reply"]
-        .as_str()
-        .unwrap_or("")
-        .to_string())
+    Ok(val["result"]["reply"].as_str().unwrap_or("").to_string())
 }
 
 async fn ask_codex_oneshot(ws_url: &str, prompt: &str, cwd: &str) -> Result<String, String> {
@@ -1853,9 +1875,7 @@ async fn ask_goose_oneshot(
     prompt: &str,
     cwd: &str,
 ) -> Result<String, String> {
-    let mut req = ws_url
-        .into_client_request()
-        .map_err(|e| e.to_string())?;
+    let mut req = ws_url.into_client_request().map_err(|e| e.to_string())?;
 
     if let Some(token) = secret
         && let Ok(val) = token.parse()
@@ -1957,11 +1977,7 @@ async fn ws_codex_handler(
     ws.on_upgrade(move |socket| handle_codex_ws(socket, query, state))
 }
 
-async fn handle_codex_ws(
-    mut client_ws: WebSocket,
-    query: CodexWsQuery,
-    state: Arc<AppState>,
-) {
+async fn handle_codex_ws(mut client_ws: WebSocket, query: CodexWsQuery, state: Arc<AppState>) {
     let mut mode = query.mode.clone().unwrap_or_else(|| "ws".to_string());
     let mut target = query.target.clone().unwrap_or_default();
 
@@ -2029,11 +2045,7 @@ async fn ws_goose_handler(
     ws.on_upgrade(move |socket| handle_goose_ws(socket, query, state))
 }
 
-async fn handle_goose_ws(
-    mut client_ws: WebSocket,
-    query: GooseWsQuery,
-    state: Arc<AppState>,
-) {
+async fn handle_goose_ws(mut client_ws: WebSocket, query: GooseWsQuery, state: Arc<AppState>) {
     let mut target_url = query.target.clone().unwrap_or_default();
     let mut secret = query.token.clone().filter(|s| !s.trim().is_empty());
 
@@ -2130,8 +2142,7 @@ async fn proxy_goose_http(
 
     match req.send().await {
         Ok(resp) => {
-            let status =
-                StatusCode::from_u16(resp.status().as_u16()).unwrap_or(StatusCode::OK);
+            let status = StatusCode::from_u16(resp.status().as_u16()).unwrap_or(StatusCode::OK);
             let mut builder = Response::builder().status(status);
             if let Some(ct) = resp.headers().get("content-type") {
                 builder = builder.header("content-type", ct);
@@ -2167,7 +2178,8 @@ async fn send_bridge_error(ws: &mut WebSocket, message: &str) -> Result<(), axum
         "method": "bridge/error",
         "params": { "message": message }
     });
-    ws.send(AxumWsMessage::Text(payload.to_string().into())).await
+    ws.send(AxumWsMessage::Text(payload.to_string().into()))
+        .await
 }
 
 async fn bridge_ws_to_ws<S>(client_ws: WebSocket, upstream_ws: S)
@@ -2275,10 +2287,24 @@ async fn list_role_presets(
     State(state): State<Arc<AppState>>,
     Query(query): Query<RolePresetsQuery>,
 ) -> impl IntoResponse {
-    let target_lang = query.lang.as_deref().unwrap_or("en");
+    let target_lang = query
+        .lang
+        .as_deref()
+        .unwrap_or(defaults::DEFAULT_LANG)
+        .trim()
+        .to_lowercase();
 
+    // 1. Check in-memory language/role cache to avoid database roundtrip
+    {
+        let r = state.lang_cache.read().await;
+        if let Some(cached) = r.role_presets.get(&target_lang) {
+            return (StatusCode::OK, Json(json!(cached)));
+        }
+    }
+
+    // 2. Cache miss: query database
     let mut presets = match role_prompt::Entity::find()
-        .filter(role_prompt::Column::Lang.eq(target_lang))
+        .filter(role_prompt::Column::Lang.eq(&target_lang))
         .order_by_asc(role_prompt::Column::Role)
         .all(&state.db)
         .await
@@ -2292,9 +2318,9 @@ async fn list_role_presets(
         }
     };
 
-    if presets.is_empty() && target_lang != "en" {
+    if presets.is_empty() && target_lang != defaults::DEFAULT_LANG {
         let fallback = role_prompt::Entity::find()
-            .filter(role_prompt::Column::Lang.eq("en"))
+            .filter(role_prompt::Column::Lang.eq(defaults::DEFAULT_LANG))
             .order_by_asc(role_prompt::Column::Role)
             .all(&state.db)
             .await;
@@ -2316,6 +2342,12 @@ async fn list_role_presets(
             })
         })
         .collect();
+
+    // 3. Store in cache
+    {
+        let mut w = state.lang_cache.write().await;
+        w.role_presets.insert(target_lang, response.clone());
+    }
 
     (StatusCode::OK, Json(json!(response)))
 }
@@ -2342,7 +2374,7 @@ async fn upsert_role_preset(
     let lang = payload
         .lang
         .as_deref()
-        .unwrap_or("en")
+        .unwrap_or(defaults::DEFAULT_LANG)
         .trim()
         .to_lowercase();
     let label = if let Some(l) = payload.label {
@@ -2360,6 +2392,9 @@ async fn upsert_role_preset(
         .filter(role_prompt::Column::Lang.eq(&lang))
         .one(&state.db)
         .await;
+
+    // Invalidate role cache on mutation
+    state.lang_cache.write().await.invalidate_roles();
 
     match existing {
         Ok(Some(model)) => {
@@ -2447,7 +2482,14 @@ async fn delete_role_preset_by_role(
     Query(query): Query<RolePresetsQuery>,
 ) -> impl IntoResponse {
     let role = role.trim().to_lowercase();
-    let lang = query.lang.as_deref().unwrap_or("en").trim().to_lowercase();
+    let lang = query
+        .lang
+        .as_deref()
+        .unwrap_or(defaults::DEFAULT_LANG)
+        .trim()
+        .to_lowercase();
+
+    state.lang_cache.write().await.invalidate_roles();
 
     match role_prompt::Entity::delete_many()
         .filter(role_prompt::Column::Role.eq(&role))
@@ -2473,8 +2515,27 @@ async fn delete_role_preset_by_role(
 // ============================================================================
 // MULTILINGUAL AVAILABLE LANGUAGES & LANGUAGE PACKS (/api/languages)
 // ============================================================================
+
+/// Retrieves available languages, using the in-memory cache to prevent database roundtrips.
+async fn list_available_languages_cached(
+    state: &Arc<AppState>,
+) -> Result<Vec<available_language::Model>, DbErr> {
+    {
+        let r = state.lang_cache.read().await;
+        if let Some(ref list) = r.available_languages {
+            return Ok(list.clone());
+        }
+    }
+    let list = defaults::list_available_languages(&state.db).await?;
+    {
+        let mut w = state.lang_cache.write().await;
+        w.available_languages = Some(list.clone());
+    }
+    Ok(list)
+}
+
 async fn list_language_packs(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    match defaults::list_available_languages(&state.db).await {
+    match list_available_languages_cached(&state).await {
         Ok(list) => {
             let summary: Vec<Value> = list
                 .into_iter()
@@ -2501,7 +2562,7 @@ async fn list_language_packs(State(state): State<Arc<AppState>>) -> impl IntoRes
 }
 
 async fn get_available_languages_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    match defaults::list_available_languages(&state.db).await {
+    match list_available_languages_cached(&state).await {
         Ok(list) => (StatusCode::OK, Json(json!(list))),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -2530,6 +2591,9 @@ async fn create_available_language_handler(
     }
     let name = payload.name.trim();
     let native_name = payload.native_name.as_deref().unwrap_or(name);
+
+    state.lang_cache.write().await.invalidate_languages();
+
     match defaults::get_or_create_available_language(&state.db, &code, name, native_name).await {
         Ok(saved) => (StatusCode::CREATED, Json(json!(saved))),
         Err(e) => (
@@ -2544,13 +2608,44 @@ async fn get_language_pack(
     Path(lang): Path<String>,
 ) -> impl IntoResponse {
     let lang = lang.trim().to_lowercase();
+
+    // 1. Check in-memory cache first to avoid continuous database queries
+    {
+        let r = state.lang_cache.read().await;
+        if let Some(cached) = r.language_packs.get(&lang) {
+            return (
+                StatusCode::OK,
+                Json(json!({
+                    "id": cached.id,
+                    "lang": cached.lang,
+                    "name": cached.name,
+                    "dictionary": cached.dictionary,
+                    "updated_at": cached.updated_at
+                })),
+            );
+        }
+    }
+
+    // 2. Cache miss: query database and cache result
     match language_pack::Entity::find()
         .filter(language_pack::Column::Lang.eq(&lang))
         .one(&state.db)
         .await
     {
         Ok(Some(pack)) => {
-            let dict: Value = serde_json::from_str(&pack.dictionary_json).unwrap_or_else(|_| json!({}));
+            let dict: Value =
+                serde_json::from_str(&pack.dictionary_json).unwrap_or_else(|_| json!({}));
+            let cached_item = CachedLanguagePack {
+                id: pack.id,
+                lang: pack.lang.clone(),
+                name: pack.name.clone(),
+                dictionary: dict.clone(),
+                updated_at: pack.updated_at,
+            };
+            {
+                let mut w = state.lang_cache.write().await;
+                w.language_packs.insert(lang.clone(), cached_item);
+            }
             (
                 StatusCode::OK,
                 Json(json!({
@@ -2597,6 +2692,9 @@ async fn upsert_language_pack(
 
     // Ensure available_languages table has this language registered
     let _ = defaults::get_or_create_available_language(&state.db, &lang, &name, &name).await;
+
+    // Invalidate languages cache
+    state.lang_cache.write().await.invalidate_languages();
 
     let existing = language_pack::Entity::find()
         .filter(language_pack::Column::Lang.eq(&lang))
@@ -2663,10 +2761,17 @@ async fn update_language_pack_by_lang(
     Json(payload): Json<Value>,
 ) -> impl IntoResponse {
     let name = payload["name"].as_str().unwrap_or("").to_string();
-    let dictionary = payload.get("dictionary").cloned().unwrap_or_else(|| json!({}));
+    let dictionary = payload
+        .get("dictionary")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
     let req = UpsertLanguagePackRequest {
         lang,
-        name: if name.is_empty() { "Language".to_string() } else { name },
+        name: if name.is_empty() {
+            "Language".to_string()
+        } else {
+            name
+        },
         dictionary,
     };
     upsert_language_pack(State(state), Json(req)).await
@@ -2677,7 +2782,9 @@ async fn delete_language_pack_by_lang(
     Path(lang): Path<String>,
 ) -> impl IntoResponse {
     let lang = lang.trim().to_lowercase();
-    if lang != "en" {
+    state.lang_cache.write().await.invalidate_languages();
+
+    if lang != defaults::DEFAULT_LANG {
         let _ = available_language::Entity::delete_many()
             .filter(available_language::Column::Code.eq(&lang))
             .exec(&state.db)
@@ -2742,7 +2849,13 @@ async fn onboard_instance_handler(
             - Tu es connecté au canal d'orchestration '{}'.\n\
             - Tu peux interpeller un autre agent du collectif avec @NomAgent.\n\
             Confirme en une phrase concise que tu as bien pris connaissance de ton identité et de ton rôle '{}'.",
-            inst.name, inst.kind, inst.default_cwd, inst.role, base_role_prompt, channel_name, inst.role
+            inst.name,
+            inst.kind,
+            inst.default_cwd,
+            inst.role,
+            base_role_prompt,
+            channel_name,
+            inst.role
         ),
         "de" => format!(
             "[AGENTEN-ONBOARDING — SIMPLY AGENT HUB]\n\
@@ -2753,7 +2866,13 @@ async fn onboard_instance_handler(
             - Du bist mit dem Orchestrierungskanal '{}' verbunden.\n\
             - Du kannst jeden Agenten im Kollektiv mit @AgentenName erwähnen.\n\
             Bestätige in einem kurzen Satz, dass du deine Identität und Rolle '{}' verstanden hast.",
-            inst.name, inst.kind, inst.default_cwd, inst.role, base_role_prompt, channel_name, inst.role
+            inst.name,
+            inst.kind,
+            inst.default_cwd,
+            inst.role,
+            base_role_prompt,
+            channel_name,
+            inst.role
         ),
         _ => format!(
             "[AGENT ONBOARDING — SIMPLY AGENT HUB]\n\
@@ -2764,7 +2883,13 @@ async fn onboard_instance_handler(
             - You are connected to orchestration channel '{}'.\n\
             - You can mention any collective agent with @AgentName.\n\
             Confirm in one concise sentence that you acknowledge your identity and role '{}'.",
-            inst.name, inst.kind, inst.default_cwd, inst.role, base_role_prompt, channel_name, inst.role
+            inst.name,
+            inst.kind,
+            inst.default_cwd,
+            inst.role,
+            base_role_prompt,
+            channel_name,
+            inst.role
         ),
     };
 
@@ -2802,7 +2927,10 @@ async fn ws_instance_terminal_handler(
     ws.on_upgrade(move |socket| handle_instance_terminal_ws(socket, id, state))
 }
 
-async fn fetch_instance_tmux_ansi(state: &AppState, inst: &cli_instance::Model) -> Result<String, String> {
+async fn fetch_instance_tmux_ansi(
+    state: &AppState,
+    inst: &cli_instance::Model,
+) -> Result<String, String> {
     let url = inst.bridge_url.as_deref().unwrap_or(&inst.endpoint_url);
     let payload = json!({
         "jsonrpc": "2.0",
@@ -2914,7 +3042,10 @@ async fn handle_instance_terminal_ws(socket: WebSocket, id: Uuid, state: Arc<App
                     }
                     "refresh" => fetch_instance_tmux_ansi(&state_in, &inst_in).await,
                     _ => {
-                        let text = v["text"].as_str().or_else(|| v["data"].as_str()).unwrap_or("");
+                        let text = v["text"]
+                            .as_str()
+                            .or_else(|| v["data"].as_str())
+                            .unwrap_or("");
                         send_instance_tmux_input(
                             &state_in,
                             &inst_in,
@@ -3158,6 +3289,7 @@ mod tests {
             default_cwd: default_cwd.to_string(),
             http_client,
             channel_hubs: Arc::new(RwLock::new(HashMap::new())),
+            lang_cache: Arc::new(tokio::sync::RwLock::new(LanguageCache::new())),
         });
 
         let app = build_router(state.clone());
@@ -3321,8 +3453,18 @@ mod tests {
             .iter()
             .find(|p| p["id"] == "architect")
             .unwrap_or_else(|| panic!("missing en arch"));
-        assert!(en_arch["label"].as_str().unwrap_or("").contains("Software Architect"));
-        assert!(en_arch["prompt"].as_str().unwrap_or("").contains("Software Architect"));
+        assert!(
+            en_arch["label"]
+                .as_str()
+                .unwrap_or("")
+                .contains("Software Architect")
+        );
+        assert!(
+            en_arch["prompt"]
+                .as_str()
+                .unwrap_or("")
+                .contains("Software Architect")
+        );
 
         // 2. Verify French presets
         let fr_resp = client
@@ -3339,8 +3481,18 @@ mod tests {
             .iter()
             .find(|p| p["id"] == "architect")
             .unwrap_or_else(|| panic!("missing fr arch"));
-        assert!(fr_arch["label"].as_str().unwrap_or("").contains("Architecte Logiciel"));
-        assert!(fr_arch["prompt"].as_str().unwrap_or("").contains("Architecte Logiciel"));
+        assert!(
+            fr_arch["label"]
+                .as_str()
+                .unwrap_or("")
+                .contains("Architecte Logiciel")
+        );
+        assert!(
+            fr_arch["prompt"]
+                .as_str()
+                .unwrap_or("")
+                .contains("Architecte Logiciel")
+        );
 
         // 3. Register instance and test English onboarding
         let create_en_resp = client
@@ -3356,7 +3508,10 @@ mod tests {
             .send()
             .await
             .unwrap_or_else(|e| panic!("create en inst failed: {e}"));
-        let en_inst_val: Value = create_en_resp.json().await.unwrap_or_else(|e| panic!("json failed: {e}"));
+        let en_inst_val: Value = create_en_resp
+            .json()
+            .await
+            .unwrap_or_else(|e| panic!("json failed: {e}"));
         let en_inst_id = en_inst_val["id"].as_str().unwrap_or("");
 
         let onboard_en_resp = client
@@ -3366,7 +3521,10 @@ mod tests {
             .await
             .unwrap_or_else(|e| panic!("onboard en failed: {e}"));
         assert_eq!(onboard_en_resp.status(), StatusCode::OK);
-        let onboard_en_json: Value = onboard_en_resp.json().await.unwrap_or_else(|e| panic!("json failed: {e}"));
+        let onboard_en_json: Value = onboard_en_resp
+            .json()
+            .await
+            .unwrap_or_else(|e| panic!("json failed: {e}"));
         assert!(
             onboard_en_json["onboarding_prompt"]
                 .as_str()
@@ -3382,7 +3540,10 @@ mod tests {
             .await
             .unwrap_or_else(|e| panic!("onboard fr failed: {e}"));
         assert_eq!(onboard_fr_resp.status(), StatusCode::OK);
-        let onboard_fr_json: Value = onboard_fr_resp.json().await.unwrap_or_else(|e| panic!("json failed: {e}"));
+        let onboard_fr_json: Value = onboard_fr_resp
+            .json()
+            .await
+            .unwrap_or_else(|e| panic!("json failed: {e}"));
         assert!(
             onboard_fr_json["onboarding_prompt"]
                 .as_str()
@@ -3397,13 +3558,26 @@ mod tests {
             .await
             .unwrap_or_else(|e| panic!("de presets failed: {e}"));
         assert_eq!(de_resp.status(), StatusCode::OK);
-        let de_presets: Vec<Value> = de_resp.json().await.unwrap_or_else(|e| panic!("de json failed: {e}"));
+        let de_presets: Vec<Value> = de_resp
+            .json()
+            .await
+            .unwrap_or_else(|e| panic!("de json failed: {e}"));
         let de_arch = de_presets
             .iter()
             .find(|p| p["id"] == "architect")
             .unwrap_or_else(|| panic!("missing de arch"));
-        assert!(de_arch["label"].as_str().unwrap_or("").contains("Software-Architekt"));
-        assert!(de_arch["prompt"].as_str().unwrap_or("").contains("Software-Architekt"));
+        assert!(
+            de_arch["label"]
+                .as_str()
+                .unwrap_or("")
+                .contains("Software-Architekt")
+        );
+        assert!(
+            de_arch["prompt"]
+                .as_str()
+                .unwrap_or("")
+                .contains("Software-Architekt")
+        );
 
         let onboard_de_resp = client
             .post(format!("{}/api/instances/{}/onboard", base_url, en_inst_id))
@@ -3412,7 +3586,10 @@ mod tests {
             .await
             .unwrap_or_else(|e| panic!("onboard de failed: {e}"));
         assert_eq!(onboard_de_resp.status(), StatusCode::OK);
-        let onboard_de_json: Value = onboard_de_resp.json().await.unwrap_or_else(|e| panic!("json failed: {e}"));
+        let onboard_de_json: Value = onboard_de_resp
+            .json()
+            .await
+            .unwrap_or_else(|e| panic!("json failed: {e}"));
         assert!(
             onboard_de_json["onboarding_prompt"]
                 .as_str()
@@ -3654,6 +3831,44 @@ mod tests {
             .unwrap_or_else(|| panic!("Italian language not found in DB"));
         assert_eq!(it_in_db.name, "Italian");
         assert_eq!(it_in_db.native_name, "Italiano");
+
+        // 8. In-memory LanguageCache verification
+        // After registering "it", the cache was properly invalidated:
+        let cache_r = state.lang_cache.read().await;
+        assert!(
+            cache_r.available_languages.is_none(),
+            "Available languages cache must be invalidated after language registration"
+        );
+        drop(cache_r);
+
+        // Fetching /api/languages/available repopulates the cache:
+        let _ = client
+            .get(format!("{}/api/languages/available", base_url))
+            .send()
+            .await;
+        let cache_r2 = state.lang_cache.read().await;
+        assert!(
+            cache_r2.available_languages.is_some(),
+            "Available languages must be cached after fetch"
+        );
+        assert!(
+            cache_r2.role_presets.contains_key("en"),
+            "English role presets must be cached"
+        );
+        drop(cache_r2);
+
+        // Verify GET /defaults.js route
+        let defaults_js_resp = client
+            .get(format!("{}/defaults.js", base_url))
+            .send()
+            .await
+            .unwrap_or_else(|e| panic!("get defaults.js failed: {e}"));
+        assert_eq!(defaults_js_resp.status(), StatusCode::OK);
+        let defaults_js_text = defaults_js_resp
+            .text()
+            .await
+            .unwrap_or_else(|e| panic!("read text failed: {e}"));
+        assert!(defaults_js_text.contains("SIMPLY_DEFAULTS"));
     }
 
     #[tokio::test]
@@ -4083,10 +4298,7 @@ mod tests {
             .await
             .unwrap_or_else(|e| panic!("git status json failed: {e}"));
         assert_eq!(
-            status_val["files"]
-                .as_array()
-                .map(|a| a.len())
-                .unwrap_or(0),
+            status_val["files"].as_array().map(|a| a.len()).unwrap_or(0),
             1
         );
         assert!(
@@ -4180,8 +4392,8 @@ mod tests {
         let first_txt = first_msg
             .into_text()
             .unwrap_or_else(|e| panic!("not text: {e}"));
-        let first_json: Value = serde_json::from_str(&first_txt)
-            .unwrap_or_else(|e| panic!("invalid json: {e}"));
+        let first_json: Value =
+            serde_json::from_str(&first_txt).unwrap_or_else(|e| panic!("invalid json: {e}"));
         assert_eq!(first_json["type"], "screen");
         assert!(
             first_json["data"]
@@ -4211,8 +4423,8 @@ mod tests {
         let reply_txt = reply_msg
             .into_text()
             .unwrap_or_else(|e| panic!("not text: {e}"));
-        let reply_json: Value = serde_json::from_str(&reply_txt)
-            .unwrap_or_else(|e| panic!("invalid json: {e}"));
+        let reply_json: Value =
+            serde_json::from_str(&reply_txt).unwrap_or_else(|e| panic!("invalid json: {e}"));
         assert_eq!(reply_json["type"], "screen");
         assert!(
             reply_json["data"]

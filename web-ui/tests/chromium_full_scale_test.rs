@@ -73,13 +73,7 @@ async fn save_screenshot(
     id: u64,
     out_path: &Path,
 ) {
-    let resp = cdp_call(
-        ws,
-        id,
-        "Page.captureScreenshot",
-        json!({ "format": "png" }),
-    )
-    .await;
+    let resp = cdp_call(ws, id, "Page.captureScreenshot", json!({ "format": "png" })).await;
     if let Some(b64) = resp["result"]["data"].as_str()
         && let Ok(bytes) = BASE64.decode(b64)
     {
@@ -200,11 +194,7 @@ async fn full_scale_chromium_and_local_instances_e2e() {
         if let Ok(resp) = client.get("http://127.0.0.1:19223/json/list").send().await
             && let Ok(targets) = resp.json::<Vec<Value>>().await
             && let Some(page) = targets.iter().find(|t| {
-                t["type"] == "page"
-                    && t["url"]
-                        .as_str()
-                        .unwrap_or("")
-                        .contains("127.0.0.1:18089")
+                t["type"] == "page" && t["url"].as_str().unwrap_or("").contains("127.0.0.1:18089")
             })
             && let Some(u) = page["webSocketDebuggerUrl"].as_str()
         {
@@ -732,12 +722,7 @@ async fn full_scale_chromium_and_local_instances_e2e() {
     .await;
 
     // 9. Test Configurable Retention in Chromium
-    let _ = cdp_eval(
-        &mut cdp_ws,
-        500,
-        "window.switchTab('orchestration'); true",
-    )
-    .await;
+    let _ = cdp_eval(&mut cdp_ws, 500, "window.switchTab('orchestration'); true").await;
     sleep(Duration::from_millis(300)).await;
 
     let _ = cdp_eval(

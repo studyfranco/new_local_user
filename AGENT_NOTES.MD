@@ -165,15 +165,50 @@
     - Documented `/api/languages/available` and `AvailableLanguage` schemas in [`web-ui/api.yml`](web-ui/api.yml).
     - Added test assertions in `test_role_prompts_and_language_packs_database_persistence_and_autohealing` and `test_database_foreign_key_and_join_indexes`.
 
+#### 11. Root Cargo Workspace Configuration & IDE Language Server (rust-analyzer) Integration
+* **Finding**: The Git repository root (`/home/fallrik/Documents/workspaces/new_local_user`) lacked a top-level `Cargo.toml`. When opened in an IDE or editor (VS Code, Antigravity IDE, RustRover), the default `rust-analyzer` language server attempted to locate `Cargo.toml` at the workspace root and failed (`error: could not find 'Cargo.toml' in workspace root`). This caused editors to analyze Rust files as detached standalone files, generating spurious syntax and unresolved import warnings (e.g. `crate::entities`).
+* **Resolution**:
+  - Created root virtual workspace manifest [`Cargo.toml`](Cargo.toml):
+    ```toml
+    [workspace]
+    resolver = "2"
+    members = [
+        "web-ui",
+    ]
+    ```
+  - Executed full workspace formatting sweep with `cargo fmt`.
+  - Verified that `cargo check`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` execute directly from the repository root with zero errors.
+
+#### 12. Externalization of Multilingual Defaults to `defaults.js` & In-Memory Thread-Safe `LanguageCache`
+* **Finding**: Hardcoding canonical role prompts, available languages, and large JSON dictionaries inside Rust variables (`defaults.rs`) bloated the compiled binary, required recompilation for any prompt or copy revision, and generated continuous database roundtrips on high-frequency UI polling.
+* **Resolution**:
+  - **Clean External Defaults (`web-ui/static/defaults.js`)**:
+    - Created `static/defaults.js` defining canonical data (`available_languages`, `role_prompts`, and full dictionaries for `en`, `fr`, `de`).
+    - Exposed over HTTP route `GET /defaults.js` and loaded via `<script src="/defaults.js"></script>` in `index.html`.
+  - **Zero Embedded Language Constants in Rust Code (`defaults.rs`)**:
+    - Purged all massive static string constants from Rust code (`CANONICAL_ROLE_PROMPTS`, `CANONICAL_LANG_PACK_*`, `CANONICAL_AVAILABLE_LANGUAGES`).
+    - The Rust codebase now only retains configuration variables indicating *what* to look up in the database: `DEFAULT_LANG = "en"` and `DEFAULT_ROLE = "developer"`.
+    - Implemented `load_defaults_from_js()` which parses the external JS file (with embedded compile-time fallback) on startup when database tables are empty or missing default entries.
+  - **In-Memory Thread-Safe `LanguageCache` (`cache.rs`)**:
+    - Implemented `LanguageCache` wrapped in `Arc<tokio::sync::RwLock<LanguageCache>>` within `AppState`.
+    - Caches available languages (`available_languages`), language pack dictionaries (`language_packs`), and role presets (`role_presets`).
+    - Eliminates continuous database roundtrips on frontend UI queries (`/api/languages`, `/api/languages/{lang}`, `/api/languages/available`, `/api/roles/presets`).
+    - Synchronized cache invalidation on any mutation (`POST /api/languages`, `POST /api/languages/available`, `POST/PUT/DELETE /api/roles/presets`, and instance prompt updates).
+  - **Automated Verification**:
+    - Added unit test assertions verifying cache hits, cache invalidation, and repopulation.
+    - Added `defaults_js_has_no_syntax_errors` to `frontend_syntax_test.rs` ensuring valid syntax via oxc_parser.
+
 ---
 
 ### Verification Summary
 
 | Test Suite | Command | Outcome |
 | :--- | :--- | :--- |
+| Workspace Cargo Check | `cargo check --all-targets` | **0 errors, 0 warnings** |
 | Clippy Gate | `cargo clippy --all-targets -- -D warnings` | **0 warnings, 0 errors** |
+| Code Formatting | `cargo fmt --check` | **0 differences** |
 | Unit Tests (`agent-bridge`) | `cargo test --bin agent-bridge` | **1 passed, 0 failed** |
 | Unit Tests (`agent-hub`) | `cargo test --bin agent-hub` | **8 passed, 0 failed** |
-| Frontend Syntax & OpenAPI | `cargo test --test frontend_syntax_test` | **3 passed, 0 failed** |
+| Frontend Syntax & OpenAPI | `cargo test --test frontend_syntax_test` | **4 passed, 0 failed** |
 | Chromium CDP E2E | `cargo test --test chromium_full_scale_test` | **1 passed, 0 failed** |
-| **Total Test Suite** | `cargo test` | **13 passed, 0 failed** |
+| **Total Test Suite** | `cargo test` | **14 passed, 0 failed** |

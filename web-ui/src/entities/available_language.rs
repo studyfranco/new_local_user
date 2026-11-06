@@ -50,4 +50,3 @@ impl Related<super::role_prompt::Entity> for Entity {
 }
 
 impl ActiveModelBehavior for ActiveModel {}
-

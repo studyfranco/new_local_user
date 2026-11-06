@@ -88,7 +88,7 @@ pub async fn connect_and_migrate(
                 secret_token: Set(None),
                 default_cwd: Set(default_cwd.to_string()),
                 role: Set("developer".to_string()),
-                role_prompt: Set(get_role_prompt(&db, "developer", "en")
+                role_prompt: Set(get_role_prompt(&db, "developer", defaults::DEFAULT_LANG)
                     .await
                     .unwrap_or_else(|_| "Developer prompt".to_string())),
                 created_at: Set(now),
@@ -104,7 +104,7 @@ pub async fn connect_and_migrate(
                 secret_token: Set(None),
                 default_cwd: Set(default_cwd.to_string()),
                 role: Set("reviewer".to_string()),
-                role_prompt: Set(get_role_prompt(&db, "reviewer", "en")
+                role_prompt: Set(get_role_prompt(&db, "reviewer", defaults::DEFAULT_LANG)
                     .await
                     .unwrap_or_else(|_| "Reviewer prompt".to_string())),
                 created_at: Set(now),
@@ -120,7 +120,7 @@ pub async fn connect_and_migrate(
                 secret_token: Set(None),
                 default_cwd: Set(default_cwd.to_string()),
                 role: Set("architect".to_string()),
-                role_prompt: Set(get_role_prompt(&db, "architect", "en")
+                role_prompt: Set(get_role_prompt(&db, "architect", defaults::DEFAULT_LANG)
                     .await
                     .unwrap_or_else(|_| "Architect prompt".to_string())),
                 created_at: Set(now),
@@ -136,7 +136,7 @@ pub async fn connect_and_migrate(
                 secret_token: Set(default_goose_secret),
                 default_cwd: Set(default_cwd.to_string()),
                 role: Set("tester".to_string()),
-                role_prompt: Set(get_role_prompt(&db, "tester", "en")
+                role_prompt: Set(get_role_prompt(&db, "tester", defaults::DEFAULT_LANG)
                     .await
                     .unwrap_or_else(|_| "Tester prompt".to_string())),
                 created_at: Set(now),

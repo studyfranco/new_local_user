@@ -3,16 +3,16 @@
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 use axum::{
+    Json, Router,
     body::Body,
     extract::{Path, State},
     http::{HeaderMap, Method, Response, StatusCode},
     response::IntoResponse,
     routing::{any, get, post},
-    Json, Router,
 };
 use bytes::Bytes;
 use regex::Regex;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::{env, net::SocketAddr, path::Path as FsPath, process::Stdio, sync::Arc, time::Duration};
 use tokio::{io::AsyncWriteExt, process::Command, time::sleep};
 use tracing::{error, info};
@@ -208,7 +208,10 @@ async fn handle_rpc(
         }),
         "auth/status" => {
             if state.agent_name == "codex" {
-                let out = Command::new("codex").args(["login", "status"]).output().await;
+                let out = Command::new("codex")
+                    .args(["login", "status"])
+                    .output()
+                    .await;
                 let detail = match out {
                     Ok(o) => format!(
                         "{}{}",
@@ -448,8 +451,7 @@ async fn proxy_cli_web_inner(
     }
     match req.send().await {
         Ok(resp) => {
-            let status =
-                StatusCode::from_u16(resp.status().as_u16()).unwrap_or(StatusCode::OK);
+            let status = StatusCode::from_u16(resp.status().as_u16()).unwrap_or(StatusCode::OK);
             let mut builder = Response::builder().status(status);
             if let Some(ct) = resp.headers().get("content-type") {
                 builder = builder.header("content-type", ct);
@@ -472,7 +474,8 @@ mod tests {
 
     #[test]
     fn test_extract_urls_and_code() {
-        let sample = "Open https://auth.openai.com/codex/device and enter code AB12-9876F to login.";
+        let sample =
+            "Open https://auth.openai.com/codex/device and enter code AB12-9876F to login.";
         let (url, code) = extract_urls_and_code(sample);
         assert_eq!(url, "https://auth.openai.com/codex/device");
         assert_eq!(code, "AB12-9876F");

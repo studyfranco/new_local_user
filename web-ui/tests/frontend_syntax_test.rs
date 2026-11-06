@@ -20,8 +20,8 @@ fn syntax_errors(relative: &str) -> Vec<String> {
         .diagnostics
         .iter()
         .map(|err| {
-            let offset = (err.labels.first().map_or(0, |span| span.offset()) as usize)
-                .min(source.len());
+            let offset =
+                (err.labels.first().map_or(0, |span| span.offset()) as usize).min(source.len());
             let line = source[..offset].matches('\n').count() + 1;
             let column = offset - source[..offset].rfind('\n').map_or(0, |i| i + 1) + 1;
             format!("{relative}:{line}:{column}  {}", err.message)
@@ -35,6 +35,17 @@ fn app_js_has_no_syntax_errors() {
     assert!(
         errors.is_empty(),
         "static/app.js has {} syntax error(s) and will not load in a browser:\n  {}",
+        errors.len(),
+        errors.join("\n  ")
+    );
+}
+
+#[test]
+fn defaults_js_has_no_syntax_errors() {
+    let errors = syntax_errors("static/defaults.js");
+    assert!(
+        errors.is_empty(),
+        "static/defaults.js has {} syntax error(s) and will not load in a browser:\n  {}",
         errors.len(),
         errors.join("\n  ")
     );

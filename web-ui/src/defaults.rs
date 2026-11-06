@@ -1,8 +1,12 @@
-//! Default Role Prompts, Labels and Language Packs (Database Healing & Verification)
+//! Default Role Prompts, Labels and Language Packs (Database Loader & Verification)
 //!
-//! This module provides canonical fallback data and an automated reconciliation routine
-//! (`ensure_database_defaults`) that verifies the database tables (`role_prompts` and
-//! `language_packs`) and inserts any missing entries to heal incompletely initialized databases.
+//! All language data, role prompts, and available languages reside in the database tables
+//! (`available_languages`, `role_prompts`, `language_packs`).
+//!
+//! At application startup, if the database is uninitialized or missing defaults, this module
+//! reconciles the database by reading the canonical seed data from `static/defaults.js`.
+//! In the Rust codebase, only configuration variables (`DEFAULT_LANG`, `DEFAULT_ROLE`) define
+//! what to query from the database.
 
 use crate::entities::{available_language, language_pack, role_prompt};
 use chrono::Utc;
@@ -10,588 +14,248 @@ use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter, QueryOrder,
     Set,
 };
-use tracing::info;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::path::Path;
+use tracing::{error, info};
 use uuid::Uuid;
 
-/// A canonical available language definition for database seeding and healing.
-pub struct CanonicalAvailableLanguage {
-    pub code: &'static str,
-    pub name: &'static str,
-    pub native_name: &'static str,
+/// Default language code when none is requested or as fallback when a translation is missing.
+pub const DEFAULT_LANG: &str = "en";
+
+/// Default role when creating or querying an instance without an explicit role.
+pub const DEFAULT_ROLE: &str = "developer";
+
+/// Relative default file path for the JavaScript seed defaults.
+pub const DEFAULT_JS_FILE_PATH: &str = "static/defaults.js";
+
+/// Compile-time embedded copy of the JS defaults file to ensure container/test portability.
+const EMBEDDED_DEFAULTS_JS: &str = include_str!("../static/defaults.js");
+
+/// Deserialized seed representation from `static/defaults.js`.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct DefaultsSeed {
+    pub available_languages: Vec<AvailableLanguageSeed>,
+    pub role_prompts: Vec<RolePromptSeed>,
+    pub language_packs: HashMap<String, LanguagePackSeed>,
+}
+
+/// Available language specification from `static/defaults.js`.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct AvailableLanguageSeed {
+    pub code: String,
+    pub name: String,
+    pub native_name: String,
     pub is_default: bool,
     pub is_active: bool,
 }
 
-/// Canonical available languages pre-installed in the system.
-pub const CANONICAL_AVAILABLE_LANGUAGES: &[CanonicalAvailableLanguage] = &[
-    CanonicalAvailableLanguage {
-        code: "en",
-        name: "English",
-        native_name: "English",
-        is_default: true,
-        is_active: true,
-    },
-    CanonicalAvailableLanguage {
-        code: "fr",
-        name: "French",
-        native_name: "Français",
-        is_default: false,
-        is_active: true,
-    },
-    CanonicalAvailableLanguage {
-        code: "de",
-        name: "German",
-        native_name: "Deutsch",
-        is_default: false,
-        is_active: true,
-    },
-];
-
-/// A canonical default prompt definition for database seeding and healing.
-pub struct DefaultRolePromptSpec {
-    pub role: &'static str,
-    pub lang: &'static str,
-    pub label: &'static str,
-    pub prompt: &'static str,
+/// Role prompt specification from `static/defaults.js`.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct RolePromptSeed {
+    pub role: String,
+    pub lang: String,
+    pub label: String,
+    pub prompt: String,
 }
 
-/// Canonical default role prompts and labels across English, French, and German.
-pub const CANONICAL_ROLE_PROMPTS: &[DefaultRolePromptSpec] = &[
-    // ─── English (en) ────────────────────────────────────────────────────────
-    DefaultRolePromptSpec {
-        role: "architect",
-        lang: "en",
-        label: "🏗️ Software Architect",
-        prompt: "You are the Lead Software Architect of the Simply Agent Hub collective. Your mission is to design technical architectures, break down tasks into clean milestones, specify API/database contracts, and coordinate other CLI agents (Developer, Reviewer, Tester) on the orchestration channel.",
-    },
-    DefaultRolePromptSpec {
-        role: "developer",
-        lang: "en",
-        label: "💻 Lead Developer",
-        prompt: "You are the Lead Implementation Developer of the Simply Agent Hub collective. Your mission is to write clean, performant, and idiomatic code in the shared workspace (/srv), implement architecture specifications, and address code review feedback.",
-    },
-    DefaultRolePromptSpec {
-        role: "reviewer",
-        lang: "en",
-        label: "🔍 Code Reviewer & QA",
-        prompt: "You are the Code Reviewer & QA Specialist of the Simply Agent Hub collective. Your mission is to inspect changes, spot potential bugs and edge cases, ensure error handling and security standards, and provide constructive feedback on the channel.",
-    },
-    DefaultRolePromptSpec {
-        role: "tester",
-        lang: "en",
-        label: "🧪 QA & E2E Test Engineer",
-        prompt: "You are the QA & E2E Test Engineer of the Simply Agent Hub collective. Your mission is to write and execute unit tests, integration tests, and verification scripts, ensuring builds compile cleanly with zero warnings or regressions.",
-    },
-    DefaultRolePromptSpec {
-        role: "security",
-        lang: "en",
-        label: "🛡️ Security & DevSecOps Auditor",
-        prompt: "You are the Security & DevSecOps Auditor of the Simply Agent Hub collective. Your mission is to audit permissions, rootless container boundaries, credentials safety, and input sanitization.",
-    },
-    DefaultRolePromptSpec {
-        role: "general",
-        lang: "en",
-        label: "🤖 Versatile Agent",
-        prompt: "You are a versatile CLI agent connected to the Simply Agent Hub orchestration bus. Collaborate cleanly and effectively with other agents on the channel.",
-    },
-
-    // ─── French (fr) ─────────────────────────────────────────────────────────
-    DefaultRolePromptSpec {
-        role: "architect",
-        lang: "fr",
-        label: "🏗️ Architecte Logiciel",
-        prompt: "Tu es l'Architecte Logiciel du collectif Simply Agent Hub. Ton rôle est de concevoir l'architecture technique, découper les tâches de manière claire, définir les contrats d'API/bases de données et coordonner les autres agents CLI (Développeur, Reviewer, Testeur) sur le canal d'orchestration.",
-    },
-    DefaultRolePromptSpec {
-        role: "developer",
-        lang: "fr",
-        label: "💻 Développeur Principal",
-        prompt: "Tu es l'Agent Développeur Principal (Implémentation) du collectif Simply Agent Hub. Ton rôle est d'écrire du code propre, performant et idiomatique dans le workspace partagé (/srv), d'appliquer les spécifications de l'Architecte et de corriger les retours du Reviewer.",
-    },
-    DefaultRolePromptSpec {
-        role: "reviewer",
-        lang: "fr",
-        label: "🔍 Code Reviewer & Qualité",
-        prompt: "Tu es l'Agent Code Reviewer & Qualité du collectif Simply Agent Hub. Ton rôle est d'analyser les modifications, détecter les bugs potentiels, vérifier la sécurité, la gestion d'erreurs et la conformité au style du projet, puis de donner un retour constructif aux autres agents sur le canal.",
-    },
-    DefaultRolePromptSpec {
-        role: "tester",
-        lang: "fr",
-        label: "🧪 Ingénieur QA & Tests E2E",
-        prompt: "Tu es l'Agent Ingénieur QA & Tests E2E du collectif Simply Agent Hub. Ton rôle est d'élaborer et d'exécuter les tests unitaires, d'intégration et les vérifications curl/E2E, puis de valider que tout compile et passe sans régression.",
-    },
-    DefaultRolePromptSpec {
-        role: "security",
-        lang: "fr",
-        label: "🛡️ Auditeur Sécurité & DevSecOps",
-        prompt: "Tu es l'Agent Auditeur Sécurité & DevSecOps du collectif Simply Agent Hub. Ton rôle est de vérifier les permissions, l'isolation des conteneurs rootless, l'absence de secrets exposés et la robustesse des entrées utilisateur.",
-    },
-    DefaultRolePromptSpec {
-        role: "general",
-        lang: "fr",
-        label: "🤖 Agent Polyvalent",
-        prompt: "Tu es un Agent CLI polyvalent connecté au bus d'orchestration Simply Agent Hub. Collabore de manière concise et structurée avec les autres agents présents dans le canal.",
-    },
-
-    // ─── German (de) ─────────────────────────────────────────────────────────
-    DefaultRolePromptSpec {
-        role: "architect",
-        lang: "de",
-        label: "🏗️ Software-Architekt",
-        prompt: "Du bist der leitende Software-Architekt des Simply Agent Hub Kollektivs. Deine Aufgabe ist es, modulare Architekturen zu entwerfen, Arbeitspakete zu definieren, API-/Datenbankverträge festzulegen und die anderen CLI-Agenten im Orchestrierungskanal zu koordinieren.",
-    },
-    DefaultRolePromptSpec {
-        role: "developer",
-        lang: "de",
-        label: "💻 Lead-Entwickler",
-        prompt: "Du bist der Lead-Entwickler des Simply Agent Hub Kollektivs. Deine Aufgabe ist es, sauberen, performanten und idiomatischen Code im gemeinsamen Arbeitsbereich (/srv) zu schreiben, Spezifikationen umzusetzen und Feedback zu berücksichtigen.",
-    },
-    DefaultRolePromptSpec {
-        role: "reviewer",
-        lang: "de",
-        label: "🔍 Code-Reviewer & QA",
-        prompt: "Du bist der Code-Reviewer und QA-Spezialist des Simply Agent Hub Kollektivs. Deine Aufgabe ist es, Codeänderungen zu prüfen, Fehler und Sicherheitsrisiken aufzuspüren und konstruktives Feedback im Kanal zu teilen.",
-    },
-    DefaultRolePromptSpec {
-        role: "tester",
-        lang: "de",
-        label: "🧪 QA- & E2E-Testingenieur",
-        prompt: "Du bist der QA- und E2E-Testingenieur des Simply Agent Hub Kollektivs. Deine Aufgabe ist es, Unit-, Integrations- und Verifizierungstests zu erstellen und sicherzustellen, dass Builds fehlerfrei und ohne Warnungen durchlaufen.",
-    },
-    DefaultRolePromptSpec {
-        role: "security",
-        lang: "de",
-        label: "🛡️ Sicherheits- & DevSecOps-Auditor",
-        prompt: "Du bist der Sicherheits- und DevSecOps-Auditor des Simply Agent Hub Kollektivs. Deine Aufgabe ist es, Berechtigungen, rootless Container-Isolation und sicheren Umgang mit Eingaben zu gewährleisten.",
-    },
-    DefaultRolePromptSpec {
-        role: "general",
-        lang: "de",
-        label: "🤖 Vielseitiger Agent",
-        prompt: "Du bist ein vielseitiger CLI-Agent im Simply Agent Hub Orchestrierungsbus. Arbeite strukturiert und präzise mit den anderen Agenten im Kanal zusammen.",
-    },
-];
-
-/// Returns the fallback static label for a given role and language.
-pub fn fallback_role_label(role: &str, lang: &str) -> &'static str {
-    CANONICAL_ROLE_PROMPTS
-        .iter()
-        .find(|p| p.role == role && p.lang == lang)
-        .map(|p| p.label)
-        .unwrap_or_else(|| {
-            CANONICAL_ROLE_PROMPTS
-                .iter()
-                .find(|p| p.role == role && p.lang == "en")
-                .map(|p| p.label)
-                .unwrap_or("🤖 Agent")
-        })
+/// Language pack specification from `static/defaults.js`.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct LanguagePackSeed {
+    pub name: String,
+    pub dictionary: serde_json::Value,
 }
 
-/// Returns the fallback static prompt for a given role and language.
-pub fn fallback_role_prompt(role: &str, lang: &str) -> &'static str {
-    CANONICAL_ROLE_PROMPTS
-        .iter()
-        .find(|p| p.role == role && p.lang == lang)
-        .map(|p| p.prompt)
-        .unwrap_or_else(|| {
-            CANONICAL_ROLE_PROMPTS
-                .iter()
-                .find(|p| p.role == role && p.lang == "en")
-                .map(|p| p.prompt)
-                .unwrap_or("You are an agent connected to Simply Agent Hub.")
-        })
-}
-
-/// Complete English UI dictionary JSON.
-fn default_lang_dict_en() -> &'static str {
-    r#"{
-        "appTitle": "Simply Agent Hub",
-        "btnRefreshAll": "↻ Refresh Status",
-        "tabConsole": "CLI Console, Roles & Native Terminal",
-        "tabOrchestration": "Multi-CLI Orchestration Channels",
-        "tabGit": "🔀 Git Diff & Commit",
-        "tabInventory": "Container Fleet",
-        "tabRpc": "JSON-RPC Inspector",
-        "cliSelectorTitle": "CLI Container Selection",
-        "cliSelectorSubtitle": "Select, rename, assign a role, or authenticate any of your CLI instances.",
-        "activeCliLabel": "Active CLI Instance",
-        "btnAddCli": "+ Add CLI",
-        "btnEditCli": "✎ Rename / Edit",
-        "btnAuthCli": "🔑 Authenticate",
-        "agentRoleTitle": "🎭 Agent Role & Mission",
-        "roleInCollectiveLabel": "Role in collective",
-        "rolePromptLabel": "Role Prompt (suggested default / customizable)",
-        "btnSaveRole": "💾 Save Role",
-        "btnSaveRoleTemplate": "💾 Save to DB",
-        "btnOnboardCli": "🎭 Initialize Agent",
-        "addCliFormTitle": "Add CLI Container",
-        "customNameLabel": "Custom Name",
-        "cliAgentTypeLabel": "CLI Agent Kind",
-        "defaultRoleLabel": "Default Role",
-        "bridgeUrlLabel": "Auth/Tmux Bridge URL (optional)",
-        "secretTokenLabel": "Secret / Token (optional)",
-        "workingDirLabel": "Working Directory (cwd)",
-        "btnSaveDatabase": "Save to Database",
-        "btnCancel": "Cancel",
-        "authPanelTitle": "Container Web Authentication",
-        "authPanelSubtitle": "Authenticate the selected container without leaving this dashboard.",
-        "btnCheckStatus": "Check Status",
-        "btnGetDeviceCode": "Get Device Code / OAuth Link",
-        "apiKeyInjectLabel": "Or inject an API key (OpenAI / Gemini / Anthropic)",
-        "btnApplyKey": "Apply Key",
-        "oauthCallbackLabel": "Or validate OAuth Callback URL (http://localhost:...)",
-        "btnValidateOauth": "Validate OAuth",
-        "btnConnectCli": "Connect to CLI",
-        "btnNewSession": "+ Session / Thread",
-        "btnNativeTerminal": "🖥 Native Terminal (Tmux/WS)",
-        "btnCliWebServer": "🌐 CLI Web Server",
-        "sessionsThreadsTitle": "Sessions / Threads",
-        "selectConnectHint": "Select and connect a CLI instance",
-        "btnInterrupt": "⏹ Interrupt",
-        "btnClear": "Clear",
-        "termDrawerTitle": "🖥 Interactive Native Terminal (Direct Tmux WebSocket)",
-        "btnClose": "✕ Close",
-        "btnSendPty": "Send to PTY ➤",
-        "approvalTitle": "Tool approval required by CLI",
-        "btnApprove": "Approve",
-        "btnDecline": "Decline",
-        "btnSend": "Send ➤",
-        "orchChannelsTitle": "Orchestration Channels",
-        "orchChannelsSubtitle": "Create a shared channel where multiple CLI instances exchange messages in real-time.",
-        "activeChannelLabel": "Active Channel",
-        "btnNewChannel": "+ New Channel",
-        "btnDelete": "🗑 Delete",
-        "createChannelTitle": "Create Channel",
-        "channelNameLabel": "Channel Name",
-        "descriptionLabel": "Description",
-        "btnCreate": "Create",
-        "clisJoinedChannelTitle": "CLIs in this channel",
-        "clisJoinedChannelHint": "Check the instances that participate in this channel's exchanges:",
-        "btnSaveParticipants": "💾 Save Channel Participants",
-        "retentionTitle": "🧹 Configurable Retention",
-        "retentionDaysLabel": "Retention (days, 0 = unlimited)",
-        "maxMessagesLabel": "Max message count (0 = unlimited)",
-        "btnSaveRetention": "💾 Apply & Prune",
-        "btnExportMd": "📥 Export .md",
-        "btnRefreshHistory": "↻ DB History",
-        "btnBroadcast": "Broadcast ➤",
-        "gitStatusTitle": "🔀 Workspace Git Status",
-        "gitStatusSubtitle": "Inspect changes produced by your CLI agents, revert a file, or create a commit.",
-        "gitCwdLabel": "Git Directory (cwd)",
-        "btnAnalyze": "↻ Analyze",
-        "activeBranchLabel": "Active branch: ",
-        "modifiedFilesTitle": "Modified Files",
-        "createCommitTitle": "Create Commit",
-        "commitMsgLabel": "Commit Message",
-        "btnGitCommit": "✅ Stage All (git add -A) & Commit",
-        "recentCommitsTitle": "Recent Commits",
-        "unifiedDiffTitle": "Unified Diff (`git diff HEAD`)",
-        "btnRevertAll": "↩ Revert entire workspace",
-        "inventoryTitle": "Registered CLI Container Fleet",
-        "inventorySubtitle": "Manage all your Codex, Antigravity, Claude, and Goose instances persisted in the database.",
-        "btnNewCliContainer": "+ New CLI Container",
-        "thInstanceName": "Instance Name",
-        "thType": "Type",
-        "thRole": "Assigned Role",
-        "thTransport": "Transport",
-        "thEndpoint": "Endpoint",
-        "thCwd": "CWD",
-        "thStatus": "Status",
-        "thActions": "Actions",
-        "rpcTitle": "JSON-RPC 2.0 Frame Inspector & Orchestration Bus",
-        "rpcSubtitle": "Real-time log of frames exchanged with CLI containers.",
-        "btnClearLog": "Clear Log",
-        "onlineBadge": "Online",
-        "offlineBadge": "Offline",
-        "btnUse": "Use",
-        "btnRename": "✎ Rename",
-        "btnCompactHeader": "🗕 Header",
-        "btnExpandHeader": "🗖 Header",
-        "btnToggleSidebar": "◀ Sidebar",
-        "btnExpandSidebar": "▶ Sidebar",
-        "btnMaximizeTerm": "🗖 Maximize",
-        "btnRestoreTerm": "🗗 Restore",
-        "btnOpenSettings": "⚙",
-        "settingsTitle": "⚙ Settings & Preferences",
-        "settingsLangLabel": "Interface Language",
-        "settingsLangHint": "Choose your preferred interface language. Additional languages can be added dynamically.",
-        "settingsDisplayLabel": "Ergonomics & Display Options",
-        "settingsCompactHeader": "Compact header layout (maximize vertical space)",
-        "settingsRetractSidebar": "Retract left sidebar (maximize horizontal workspace)",
-        "settingsClose": "Close"
-    }"#
-}
-
-/// Complete French UI dictionary JSON.
-fn default_lang_dict_fr() -> &'static str {
-    r#"{
-        "appTitle": "Simply Agent Hub",
-        "btnRefreshAll": "↻ Actualiser l'état",
-        "tabConsole": "Console CLI, Rôles & Terminal Natif",
-        "tabOrchestration": "Canaux d'Orchestration Multi-CLIs",
-        "tabGit": "🔀 Git Diff & Commit",
-        "tabInventory": "Parc de Conteneurs",
-        "tabRpc": "Inspecteur JSON-RPC",
-        "cliSelectorTitle": "Sélection du Conteneur CLI",
-        "cliSelectorSubtitle": "Choisissez, renommez, attribuez un rôle ou authentifiez n'importe laquelle de vos instances.",
-        "activeCliLabel": "Instance CLI active",
-        "btnAddCli": "+ Ajouter un CLI",
-        "btnEditCli": "✎ Renommer / Éditer",
-        "btnAuthCli": "🔑 Authentifier",
-        "agentRoleTitle": "🎭 Rôle & Mission de l'Agent",
-        "roleInCollectiveLabel": "Rôle dans le collectif",
-        "rolePromptLabel": "Prompt de rôle (par défaut proposé / paramétrable)",
-        "btnSaveRole": "💾 Sauver le rôle",
-        "btnSaveRoleTemplate": "💾 Enregistrer en base",
-        "btnOnboardCli": "🎭 Initialiser l'agent",
-        "addCliFormTitle": "Ajouter un conteneur CLI",
-        "customNameLabel": "Nom personnalisé",
-        "cliAgentTypeLabel": "Type d'agent CLI",
-        "defaultRoleLabel": "Rôle par défaut",
-        "bridgeUrlLabel": "URL du Pont d'Auth/Tmux (optionnel)",
-        "secretTokenLabel": "Secret / Token (optionnel)",
-        "workingDirLabel": "Répertoire de travail (cwd)",
-        "btnSaveDatabase": "Enregistrer en base",
-        "btnCancel": "Annuler",
-        "authPanelTitle": "Authentification Web du Conteneur",
-        "authPanelSubtitle": "Authentifiez le conteneur sélectionné sans quitter cette interface.",
-        "btnCheckStatus": "Vérifier statut",
-        "btnGetDeviceCode": "Obtenir Code Device / Lien OAuth",
-        "apiKeyInjectLabel": "Ou injecter une clé API (OpenAI / Gemini / Anthropic)",
-        "btnApplyKey": "Appliquer la clé",
-        "oauthCallbackLabel": "Ou valider une URL Callback OAuth (http://localhost:...)",
-        "btnValidateOauth": "Valider OAuth",
-        "btnConnectCli": "Connecter au CLI",
-        "btnNewSession": "+ Session / Thread",
-        "btnNativeTerminal": "🖥 Terminal Natif (Tmux/WS)",
-        "btnCliWebServer": "🌐 Serveur Web du CLI",
-        "sessionsThreadsTitle": "Sessions / Threads",
-        "selectConnectHint": "Sélectionnez et connectez un CLI",
-        "btnInterrupt": "⏹ Interrompre",
-        "btnClear": "Effacer",
-        "termDrawerTitle": "🖥 Terminal Natif Interactif (Tmux Direct WebSocket)",
-        "btnClose": "✕ Fermer",
-        "btnSendPty": "Envoyer au PTY ➤",
-        "approvalTitle": "Autorisation d'outil requise par le CLI",
-        "btnApprove": "Autoriser",
-        "btnDecline": "Refuser",
-        "btnSend": "Envoyer ➤",
-        "orchChannelsTitle": "Canaux d'Orchestration",
-        "orchChannelsSubtitle": "Créez un canal partagé où plusieurs instances CLI échangent des messages en temps réel.",
-        "activeChannelLabel": "Canal actif",
-        "btnNewChannel": "+ Nouveau Canal",
-        "btnDelete": "🗑 Supprimer",
-        "createChannelTitle": "Créer un canal",
-        "channelNameLabel": "Nom du canal",
-        "descriptionLabel": "Description",
-        "btnCreate": "Créer",
-        "clisJoinedChannelTitle": "CLIs connectés à ce canal",
-        "clisJoinedChannelHint": "Cochez les instances qui participent aux échanges de ce canal :",
-        "btnSaveParticipants": "💾 Enregistrer les participants du canal",
-        "retentionTitle": "🧹 Rétention Paramétrable",
-        "retentionDaysLabel": "Rétention (jours, 0 = illimité)",
-        "maxMessagesLabel": "Nombre max de messages conservés (0 = illimité)",
-        "btnSaveRetention": "💾 Appliquer & Purger",
-        "btnExportMd": "📥 Export .md",
-        "btnRefreshHistory": "↻ Historique DB",
-        "btnBroadcast": "Diffuser ➤",
-        "gitStatusTitle": "🔀 État Git du Workspace",
-        "gitStatusSubtitle": "Inspectez les modifications produites par vos agents CLI, annulez un fichier ou créez un commit.",
-        "gitCwdLabel": "Répertoire Git (cwd)",
-        "btnAnalyze": "↻ Analyser",
-        "activeBranchLabel": "Branche active : ",
-        "modifiedFilesTitle": "Fichiers modifiés",
-        "createCommitTitle": "Créer un Commit",
-        "commitMsgLabel": "Message de commit",
-        "btnGitCommit": "✅ Tout indexer (git add -A) & Commit",
-        "recentCommitsTitle": "Derniers Commits",
-        "unifiedDiffTitle": "Diff Unifié (`git diff HEAD`)",
-        "btnRevertAll": "↩ Revert tout le workspace",
-        "inventoryTitle": "Parc de Conteneurs CLI enregistrés",
-        "inventorySubtitle": "Gérez l'ensemble de vos instances Codex, Antigravity, Claude et Goose persistées en base de données.",
-        "btnNewCliContainer": "+ Nouveau Conteneur CLI",
-        "thInstanceName": "Nom de l'instance",
-        "thType": "Type",
-        "thRole": "Rôle attribué",
-        "thTransport": "Transport",
-        "thEndpoint": "Endpoint",
-        "thCwd": "Dossier CWD",
-        "thStatus": "État",
-        "thActions": "Actions",
-        "rpcTitle": "Inspecteur de trames JSON-RPC 2.0 & Bus d'Orchestration",
-        "rpcSubtitle": "Journal temps réel des échanges avec les conteneurs CLI.",
-        "btnClearLog": "Vider le journal",
-        "onlineBadge": "En ligne",
-        "offlineBadge": "Hors ligne",
-        "btnUse": "Utiliser",
-        "btnRename": "✎ Renommer",
-        "btnCompactHeader": "🗕 En-tête",
-        "btnExpandHeader": "🗖 En-tête",
-        "btnToggleSidebar": "◀ Menu",
-        "btnExpandSidebar": "▶ Menu",
-        "btnMaximizeTerm": "🗖 Agrandir",
-        "btnRestoreTerm": "🗗 Réduire",
-        "btnOpenSettings": "⚙",
-        "settingsTitle": "⚙ Paramètres & Préférences",
-        "settingsLangLabel": "Langue de l'interface",
-        "settingsLangHint": "Choisissez votre langue d'affichage. De nouvelles langues peuvent être chargées dynamiquement.",
-        "settingsDisplayLabel": "Ergonomie & Options d'affichage",
-        "settingsCompactHeader": "En-tête compact (maximiser l'espace vertical)",
-        "settingsRetractSidebar": "Rétracter le volet gauche (maximiser la largeur de travail)",
-        "settingsClose": "Fermer"
-    }"#
-}
-
-/// Complete German UI dictionary JSON.
-fn default_lang_dict_de() -> &'static str {
-    r#"{
-        "appTitle": "Simply Agent Hub",
-        "btnRefreshAll": "↻ Status aktualisieren",
-        "tabConsole": "CLI-Konsole, Rollen & Natives Terminal",
-        "tabOrchestration": "Multi-CLI Orchestrierungskanäle",
-        "tabGit": "🔀 Git Diff & Commit",
-        "tabInventory": "Container-Flotte",
-        "tabRpc": "JSON-RPC Inspektor",
-        "cliSelectorTitle": "CLI-Container-Auswahl",
-        "cliSelectorSubtitle": "Wählen, benennen, weisen Sie eine Rolle zu oder authentifizieren Sie eine Ihrer CLI-Instanzen.",
-        "activeCliLabel": "Aktive CLI-Instanz",
-        "btnAddCli": "+ CLI hinzufügen",
-        "btnEditCli": "✎ Umbenennen / Bearbeiten",
-        "btnAuthCli": "🔑 Authentifizieren",
-        "agentRoleTitle": "🎭 Agentenrolle & Mission",
-        "roleInCollectiveLabel": "Rolle im Kollektiv",
-        "rolePromptLabel": "Rollen-Prompt (vorgeschlagen / anpassbar)",
-        "btnSaveRole": "💾 Rolle speichern",
-        "btnSaveRoleTemplate": "💾 In DB speichern",
-        "btnOnboardCli": "🎭 Agent initialisieren",
-        "addCliFormTitle": "CLI-Container hinzufügen",
-        "customNameLabel": "Benutzerdefinierter Name",
-        "cliAgentTypeLabel": "CLI-Agententyp",
-        "defaultRoleLabel": "Standardrolle",
-        "bridgeUrlLabel": "Auth/Tmux Bridge-URL (optional)",
-        "secretTokenLabel": "Geheimnis / Token (optional)",
-        "workingDirLabel": "Arbeitsverzeichnis (cwd)",
-        "btnSaveDatabase": "In Datenbank speichern",
-        "btnCancel": "Abbrechen",
-        "authPanelTitle": "Web-Authentifizierung des Containers",
-        "authPanelSubtitle": "Authentifizieren Sie den ausgewählten Container direkt über dieses Dashboard.",
-        "btnCheckStatus": "Status prüfen",
-        "btnGetDeviceCode": "Device Code / OAuth-Link abrufen",
-        "apiKeyInjectLabel": "Oder API-Schlüssel einfügen (OpenAI / Gemini / Anthropic)",
-        "btnApplyKey": "Schlüssel anwenden",
-        "oauthCallbackLabel": "Oder OAuth-Callback-URL validieren (http://localhost:...)",
-        "btnValidateOauth": "OAuth validieren",
-        "btnConnectCli": "Mit CLI verbinden",
-        "btnNewSession": "+ Sitzung / Thread",
-        "btnNativeTerminal": "🖥 Natives Terminal (Tmux/WS)",
-        "btnCliWebServer": "🌐 CLI-Webserver",
-        "sessionsThreadsTitle": "Sitzungen / Threads",
-        "selectConnectHint": "Wählen und verbinden Sie eine CLI-Instanz",
-        "btnInterrupt": "⏹ Unterbrechen",
-        "btnClear": "Leeren",
-        "termDrawerTitle": "🖥 Interaktives natives Terminal (Direktes Tmux WebSocket)",
-        "btnClose": "✕ Schließen",
-        "btnSendPty": "An PTY senden ➤",
-        "approvalTitle": "Werkzeuggenehmigung vom CLI angefordert",
-        "btnApprove": "Genehmigen",
-        "btnDecline": "Ablehnen",
-        "btnSend": "Senden ➤",
-        "orchChannelsTitle": "Orchestrierungskanäle",
-        "orchChannelsSubtitle": "Erstellen Sie einen geteilten Kanal, in dem mehrere CLI-Instanzen in Echtzeit zusammenarbeiten.",
-        "activeChannelLabel": "Aktiver Kanal",
-        "btnNewChannel": "+ Neuer Kanal",
-        "btnDelete": "🗑 Löschen",
-        "createChannelTitle": "Kanal erstellen",
-        "channelNameLabel": "Kanalname",
-        "descriptionLabel": "Beschreibung",
-        "btnCreate": "Erstellen",
-        "clisJoinedChannelTitle": "CLIs in diesem Kanal",
-        "clisJoinedChannelHint": "Wählen Sie die Instanzen aus, die an diesem Kanal teilnehmen:",
-        "btnSaveParticipants": "💾 Kanalteilnehmer speichern",
-        "retentionTitle": "🧹 Konfigurierbare Aufbewahrung",
-        "retentionDaysLabel": "Aufbewahrung (Tage, 0 = unbegrenzt)",
-        "maxMessagesLabel": "Max. Nachrichtenanzahl (0 = unbegrenzt)",
-        "btnSaveRetention": "💾 Anwenden & Bereinigen",
-        "btnExportMd": "📥 Export .md",
-        "btnRefreshHistory": "↻ DB-Verlauf",
-        "btnBroadcast": "Senden ➤",
-        "gitStatusTitle": "🔀 Workspace Git-Status",
-        "gitStatusSubtitle": "Überprüfen Sie Änderungen Ihrer CLI-Agenten, setzen Sie Dateien zurück oder erstellen Sie Commits.",
-        "gitCwdLabel": "Git-Verzeichnis (cwd)",
-        "btnAnalyze": "↻ Analysieren",
-        "activeBranchLabel": "Aktiver Branch: ",
-        "modifiedFilesTitle": "Geänderte Dateien",
-        "createCommitTitle": "Commit erstellen",
-        "commitMsgLabel": "Commit-Nachricht",
-        "btnGitCommit": "✅ Alles stagen (git add -A) & Committen",
-        "recentCommitsTitle": "Neueste Commits",
-        "unifiedDiffTitle": "Unified Diff (`git diff HEAD`)",
-        "btnRevertAll": "↩ Gesamten Workspace zurücksetzen",
-        "inventoryTitle": "Registrierte CLI-Container-Flotte",
-        "inventorySubtitle": "Verwalten Sie alle in der Datenbank gespeicherten Codex-, Antigravity-, Claude- und Goose-Instanzen.",
-        "btnNewCliContainer": "+ Neuer CLI-Container",
-        "thInstanceName": "Instanzname",
-        "thType": "Typ",
-        "thRole": "Zugewiesene Rolle",
-        "thTransport": "Transport",
-        "thEndpoint": "Endpunkt",
-        "thCwd": "Arbeitsverzeichnis (CWD)",
-        "thStatus": "Status",
-        "thActions": "Aktionen",
-        "rpcTitle": "JSON-RPC 2.0 Frame-Inspektor & Orchestrierungsbus",
-        "rpcSubtitle": "Echtzeitprotokoll der mit CLI-Containern ausgetauschten Frames.",
-        "btnClearLog": "Protokoll leeren",
-        "onlineBadge": "Online",
-        "offlineBadge": "Offline",
-        "btnUse": "Verwenden",
-        "btnRename": "✎ Umbenennen",
-        "btnCompactHeader": "🗕 Kopfzeile",
-        "btnExpandHeader": "🗖 Kopfzeile",
-        "btnToggleSidebar": "◀ Menü",
-        "btnExpandSidebar": "▶ Menü",
-        "btnMaximizeTerm": "🗖 Maximieren",
-        "btnRestoreTerm": "🗗 Verkleinern",
-        "btnOpenSettings": "⚙",
-        "settingsTitle": "⚙ Einstellungen & Präferenzen",
-        "settingsLangLabel": "Oberflächensprache",
-        "settingsLangHint": "Wählen Sie Ihre bevorzugte Oberflächensprache. Weitere Sprachen können dynamisch geladen werden.",
-        "settingsDisplayLabel": "Ergonomie & Anzeigeoptionen",
-        "settingsCompactHeader": "Kompakte Kopfzeile (vertikalen Platz maximieren)",
-        "settingsRetractSidebar": "Linke Seitenleiste einklappen (horizontalen Arbeitsbereich maximieren)",
-        "settingsClose": "Schließen"
-    }"#
-}
-
-/// Returns the canonical fallback JSON dictionary string for a given language code.
-pub fn canonical_lang_dict(code: &str) -> &'static str {
-    match code {
-        "fr" => default_lang_dict_fr(),
-        "de" => default_lang_dict_de(),
-        _ => default_lang_dict_en(),
-    }
-}
-
-/// Checks the `role_prompts` table and inserts any missing canonical prompts.
+/// Parses canonical default seed data from the JavaScript file (`defaults.js`).
 ///
-/// Returns the number of missing prompts that were inserted into the database.
-pub async fn ensure_role_prompts_seeded(db: &DatabaseConnection) -> Result<usize, DbErr> {
-    let mut added = 0;
-    let now = Utc::now();
+/// Looks first on disk (`static/defaults.js`, `web-ui/static/defaults.js`, or `DEFAULTS_JS_PATH`).
+/// Falls back to the embedded defaults string if the external file is absent.
+pub fn load_defaults_from_js() -> Result<DefaultsSeed, String> {
+    let raw_content = if let Ok(custom_path) = std::env::var("DEFAULTS_JS_PATH")
+        && let Ok(content) = std::fs::read_to_string(&custom_path)
+    {
+        content
+    } else if let Ok(content) = std::fs::read_to_string(DEFAULT_JS_FILE_PATH) {
+        content
+    } else if let Ok(content) = std::fs::read_to_string("web-ui/static/defaults.js") {
+        content
+    } else if let Ok(content) = std::fs::read_to_string(Path::new("..").join(DEFAULT_JS_FILE_PATH))
+    {
+        content
+    } else {
+        EMBEDDED_DEFAULTS_JS.to_string()
+    };
 
-    for spec in CANONICAL_ROLE_PROMPTS {
-        let exists = role_prompt::Entity::find()
-            .filter(role_prompt::Column::Role.eq(spec.role))
-            .filter(role_prompt::Column::Lang.eq(spec.lang))
+    let start = raw_content
+        .find('{')
+        .ok_or_else(|| "Failed to find opening '{' in defaults.js".to_string())?;
+
+    // Find the matching closing '}' taking strings and escape sequences into account
+    let mut depth = 0;
+    let mut in_string = false;
+    let mut is_escaped = false;
+    let mut end = None;
+
+    for (idx, ch) in raw_content[start..].char_indices() {
+        if in_string {
+            if is_escaped {
+                is_escaped = false;
+            } else if ch == '\\' {
+                is_escaped = true;
+            } else if ch == '"' {
+                in_string = false;
+            }
+        } else {
+            match ch {
+                '"' => in_string = true,
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = Some(start + idx);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let end = end
+        .ok_or_else(|| "Failed to find matching closing '}' for defaults.js object".to_string())?;
+
+    let json_slice = &raw_content[start..=end];
+    serde_json::from_str::<DefaultsSeed>(json_slice)
+        .map_err(|e| format!("Failed to parse defaults.js JSON payload: {e}"))
+}
+
+// ============================================================================
+// DATABASE RECONCILIATION & AUTO-HEALING AT APPLICATION STARTUP
+// ============================================================================
+
+/// Ensures that the database contains all necessary defaults for:
+/// 1. Master available languages (`available_languages` table)
+/// 2. Language packs (`language_packs` table)
+/// 3. Role prompts (`role_prompts` table)
+///
+/// Missing records are inserted from `defaults.js`; existing entries are preserved.
+pub async fn ensure_database_defaults(db: &DatabaseConnection) -> Result<usize, DbErr> {
+    let seed = match load_defaults_from_js() {
+        Ok(s) => s,
+        Err(e) => {
+            error!("Could not load seed defaults from defaults.js: {e}");
+            return Err(DbErr::Custom(e));
+        }
+    };
+
+    let mut total_added = 0;
+    total_added += ensure_available_languages_seeded(db, &seed).await?;
+    total_added += ensure_language_packs_seeded(db, &seed).await?;
+    total_added += ensure_role_prompts_seeded(db, &seed).await?;
+
+    Ok(total_added)
+}
+
+/// Ensures the `available_languages` master table is seeded from the JS configuration.
+pub async fn ensure_available_languages_seeded(
+    db: &DatabaseConnection,
+    seed: &DefaultsSeed,
+) -> Result<usize, DbErr> {
+    let now = Utc::now();
+    let mut added = 0;
+
+    for item in &seed.available_languages {
+        let exists = available_language::Entity::find()
+            .filter(available_language::Column::Code.eq(&item.code))
             .one(db)
             .await?;
 
         if exists.is_none() {
+            let model = available_language::ActiveModel {
+                id: Set(Uuid::new_v4()),
+                code: Set(item.code.clone()),
+                name: Set(item.name.clone()),
+                native_name: Set(item.native_name.clone()),
+                is_default: Set(item.is_default),
+                is_active: Set(item.is_active),
+                created_at: Set(now),
+                updated_at: Set(now),
+            };
+            model.insert(db).await?;
+            added += 1;
+        }
+    }
+
+    if added > 0 {
+        info!(
+            "Database verification: healed/inserted {added} available language(s) from defaults.js"
+        );
+    }
+
+    Ok(added)
+}
+
+/// Ensures the `language_packs` table is seeded from the JS configuration for all active available languages.
+pub async fn ensure_language_packs_seeded(
+    db: &DatabaseConnection,
+    seed: &DefaultsSeed,
+) -> Result<usize, DbErr> {
+    let now = Utc::now();
+    let mut added = 0;
+
+    for (lang_code, pack_seed) in &seed.language_packs {
+        let existing = language_pack::Entity::find()
+            .filter(language_pack::Column::Lang.eq(lang_code))
+            .one(db)
+            .await?;
+
+        if existing.is_none() {
+            let dict_json =
+                serde_json::to_string(&pack_seed.dictionary).unwrap_or_else(|_| "{}".to_string());
+            let model = language_pack::ActiveModel {
+                id: Set(Uuid::new_v4()),
+                lang: Set(lang_code.clone()),
+                name: Set(pack_seed.name.clone()),
+                dictionary_json: Set(dict_json),
+                created_at: Set(now),
+                updated_at: Set(now),
+            };
+            model.insert(db).await?;
+            added += 1;
+        }
+    }
+
+    if added > 0 {
+        info!(
+            "Database verification: healed/inserted {added} missing language pack(s) in database"
+        );
+    }
+
+    Ok(added)
+}
+
+/// Ensures the `role_prompts` table is seeded from the JS configuration.
+pub async fn ensure_role_prompts_seeded(
+    db: &DatabaseConnection,
+    seed: &DefaultsSeed,
+) -> Result<usize, DbErr> {
+    let now = Utc::now();
+    let mut added = 0;
+
+    for spec in &seed.role_prompts {
+        let existing = role_prompt::Entity::find()
+            .filter(role_prompt::Column::Role.eq(&spec.role))
+            .filter(role_prompt::Column::Lang.eq(&spec.lang))
+            .one(db)
+            .await?;
+
+        if existing.is_none() {
             let model = role_prompt::ActiveModel {
                 id: Set(Uuid::new_v4()),
-                role: Set(spec.role.to_string()),
-                lang: Set(spec.lang.to_string()),
-                label: Set(spec.label.to_string()),
-                prompt: Set(spec.prompt.to_string()),
+                role: Set(spec.role.clone()),
+                lang: Set(spec.lang.clone()),
+                label: Set(spec.label.clone()),
+                prompt: Set(spec.prompt.clone()),
                 created_at: Set(now),
                 updated_at: Set(now),
             };
@@ -607,107 +271,157 @@ pub async fn ensure_role_prompts_seeded(db: &DatabaseConnection) -> Result<usize
     Ok(added)
 }
 
-/// Checks the `language_packs` table and inserts any missing packs for languages available in the database.
-///
-/// Returns the number of missing language packs that were inserted into the database.
-pub async fn ensure_language_packs_seeded(db: &DatabaseConnection) -> Result<usize, DbErr> {
-    let mut added = 0;
-    let now = Utc::now();
+// ============================================================================
+// RUNTIME DATABASE QUERY & SELF-HEALING HELPERS
+// ============================================================================
 
-    // Query active available languages dynamically from the database
-    let available_langs = available_language::Entity::find()
-        .filter(available_language::Column::IsActive.eq(true))
-        .all(db)
-        .await?;
+/// Queries the database for a role prompt, falling back to `DEFAULT_LANG` ("en") if missing.
+/// If the database is missing both, heals the database from `defaults.js`.
+pub async fn get_or_create_role_prompt(
+    db: &DatabaseConnection,
+    role: &str,
+    lang: &str,
+) -> Result<String, DbErr> {
+    let normalized_role = role.trim().to_lowercase();
+    let normalized_lang = lang.trim().to_lowercase();
 
-    for avail in available_langs {
-        let exists = language_pack::Entity::find()
-            .filter(language_pack::Column::Lang.eq(&avail.code))
+    // 1. Direct query in database for requested language
+    if let Some(record) = role_prompt::Entity::find()
+        .filter(role_prompt::Column::Role.eq(&normalized_role))
+        .filter(role_prompt::Column::Lang.eq(&normalized_lang))
+        .one(db)
+        .await?
+    {
+        return Ok(record.prompt);
+    }
+
+    // 2. Heal from defaults.js if missing in database for the requested language
+    if let Ok(seed) = load_defaults_from_js()
+        && let Some(spec) = seed
+            .role_prompts
+            .iter()
+            .find(|s| s.role == normalized_role && s.lang == normalized_lang)
+    {
+        let now = Utc::now();
+        let model = role_prompt::ActiveModel {
+            id: Set(Uuid::new_v4()),
+            role: Set(spec.role.clone()),
+            lang: Set(spec.lang.clone()),
+            label: Set(spec.label.clone()),
+            prompt: Set(spec.prompt.clone()),
+            created_at: Set(now),
+            updated_at: Set(now),
+        };
+        let _ = model.insert(db).await;
+        return Ok(spec.prompt.clone());
+    }
+
+    // 3. Query in database for default fallback language
+    if normalized_lang != DEFAULT_LANG
+        && let Some(fallback_record) = role_prompt::Entity::find()
+            .filter(role_prompt::Column::Role.eq(&normalized_role))
+            .filter(role_prompt::Column::Lang.eq(DEFAULT_LANG))
             .one(db)
-            .await?;
-
-        if exists.is_none() {
-            let dict = canonical_lang_dict(&avail.code);
-            let model = language_pack::ActiveModel {
-                id: Set(Uuid::new_v4()),
-                lang: Set(avail.code),
-                name: Set(avail.native_name),
-                dictionary_json: Set(dict.to_string()),
-                created_at: Set(now),
-                updated_at: Set(now),
-            };
-            model.insert(db).await?;
-            added += 1;
-        }
+            .await?
+    {
+        return Ok(fallback_record.prompt);
     }
 
-    if added > 0 {
-        info!("Database verification: healed/inserted {added} missing language pack(s) in database");
+    // 4. Heal English default from defaults.js if even default English is missing
+    if let Ok(seed) = load_defaults_from_js()
+        && let Some(spec) = seed
+            .role_prompts
+            .iter()
+            .find(|s| s.role == normalized_role && s.lang == DEFAULT_LANG)
+    {
+        let now = Utc::now();
+        let model = role_prompt::ActiveModel {
+            id: Set(Uuid::new_v4()),
+            role: Set(spec.role.clone()),
+            lang: Set(spec.lang.clone()),
+            label: Set(spec.label.clone()),
+            prompt: Set(spec.prompt.clone()),
+            created_at: Set(now),
+            updated_at: Set(now),
+        };
+        let _ = model.insert(db).await;
+        return Ok(spec.prompt.clone());
     }
 
-    Ok(added)
+    Ok(format!(
+        "You are the {role} agent of the Simply Agent Hub collective. Collaborate cleanly on the channel."
+    ))
 }
 
-/// Checks the `available_languages` table and inserts any missing canonical languages.
-///
-/// Returns the number of missing languages that were inserted into the database.
-pub async fn ensure_available_languages_seeded(db: &DatabaseConnection) -> Result<usize, DbErr> {
-    let mut added = 0;
-    let now = Utc::now();
+/// Queries the database for a human-readable role label, falling back to `DEFAULT_LANG` ("en").
+pub async fn get_or_create_role_label(
+    db: &DatabaseConnection,
+    role: &str,
+    lang: &str,
+) -> Result<String, DbErr> {
+    let normalized_role = role.trim().to_lowercase();
+    let normalized_lang = lang.trim().to_lowercase();
 
-    for canon in CANONICAL_AVAILABLE_LANGUAGES {
-        let exists = available_language::Entity::find()
-            .filter(available_language::Column::Code.eq(canon.code))
+    if let Some(record) = role_prompt::Entity::find()
+        .filter(role_prompt::Column::Role.eq(&normalized_role))
+        .filter(role_prompt::Column::Lang.eq(&normalized_lang))
+        .one(db)
+        .await?
+    {
+        return Ok(record.label);
+    }
+
+    if let Ok(seed) = load_defaults_from_js()
+        && let Some(spec) = seed
+            .role_prompts
+            .iter()
+            .find(|s| s.role == normalized_role && s.lang == normalized_lang)
+    {
+        return Ok(spec.label.clone());
+    }
+
+    if normalized_lang != DEFAULT_LANG
+        && let Some(fallback_record) = role_prompt::Entity::find()
+            .filter(role_prompt::Column::Role.eq(&normalized_role))
+            .filter(role_prompt::Column::Lang.eq(DEFAULT_LANG))
             .one(db)
-            .await?;
-
-        if exists.is_none() {
-            let model = available_language::ActiveModel {
-                id: Set(Uuid::new_v4()),
-                code: Set(canon.code.to_string()),
-                name: Set(canon.name.to_string()),
-                native_name: Set(canon.native_name.to_string()),
-                is_default: Set(canon.is_default),
-                is_active: Set(canon.is_active),
-                created_at: Set(now),
-                updated_at: Set(now),
-            };
-            model.insert(db).await?;
-            added += 1;
-        }
+            .await?
+    {
+        return Ok(fallback_record.label);
     }
 
-    if added > 0 {
-        info!("Database verification: healed/inserted {added} missing available language(s) in database");
+    if let Ok(seed) = load_defaults_from_js()
+        && let Some(spec) = seed
+            .role_prompts
+            .iter()
+            .find(|s| s.role == normalized_role && s.lang == DEFAULT_LANG)
+    {
+        return Ok(spec.label.clone());
     }
 
-    Ok(added)
+    Ok(format!("🤖 {role}"))
 }
 
-/// Retrieves all active available languages from the `available_languages` table,
-/// ensuring canonical entries are seeded.
+/// Queries all available languages from the database table `available_languages`.
 pub async fn list_available_languages(
     db: &DatabaseConnection,
 ) -> Result<Vec<available_language::Model>, DbErr> {
-    let _ = ensure_available_languages_seeded(db).await?;
     available_language::Entity::find()
-        .filter(available_language::Column::IsActive.eq(true))
-        .order_by_desc(available_language::Column::IsDefault)
         .order_by_asc(available_language::Column::Code)
         .all(db)
         .await
 }
 
-/// Registers or retrieves an available language from the `available_languages` table.
+/// Queries or creates an available language record in the database.
 pub async fn get_or_create_available_language(
     db: &DatabaseConnection,
     code: &str,
     name: &str,
     native_name: &str,
 ) -> Result<available_language::Model, DbErr> {
-    let code = code.trim().to_lowercase();
+    let normalized_code = code.trim().to_lowercase();
     if let Some(existing) = available_language::Entity::find()
-        .filter(available_language::Column::Code.eq(&code))
+        .filter(available_language::Column::Code.eq(&normalized_code))
         .one(db)
         .await?
     {
@@ -715,96 +429,15 @@ pub async fn get_or_create_available_language(
     }
 
     let now = Utc::now();
-    let model = available_language::ActiveModel {
+    let active = available_language::ActiveModel {
         id: Set(Uuid::new_v4()),
-        code: Set(code),
-        name: Set(name.trim().to_string()),
-        native_name: Set(native_name.trim().to_string()),
+        code: Set(normalized_code),
+        name: Set(name.to_string()),
+        native_name: Set(native_name.to_string()),
         is_default: Set(false),
         is_active: Set(true),
         created_at: Set(now),
         updated_at: Set(now),
     };
-    let saved = model.insert(db).await?;
-    info!(
-        "Database auto-healed: added available language '{}' into database",
-        saved.code
-    );
-    Ok(saved)
-}
-
-/// Reconciles available languages, role prompts and language packs in the database.
-pub async fn ensure_database_defaults(db: &DatabaseConnection) -> Result<(), DbErr> {
-    ensure_available_languages_seeded(db).await?;
-    ensure_role_prompts_seeded(db).await?;
-    ensure_language_packs_seeded(db).await?;
-    Ok(())
-}
-
-/// Retrieves the role prompt for a given role and language from the database.
-///
-/// If missing from database, automatically inserts the default into the database and returns it.
-pub async fn get_or_create_role_prompt(
-    db: &DatabaseConnection,
-    role: &str,
-    lang: &str,
-) -> Result<String, DbErr> {
-    // 1. Direct match in DB
-    if let Some(model) = role_prompt::Entity::find()
-        .filter(role_prompt::Column::Role.eq(role))
-        .filter(role_prompt::Column::Lang.eq(lang))
-        .one(db)
-        .await?
-    {
-        return Ok(model.prompt);
-    }
-
-    // 2. Not in DB: heal the database by inserting the default into the role_prompts table!
-    let now = Utc::now();
-    let prompt_text = fallback_role_prompt(role, lang);
-    let label_text = fallback_role_label(role, lang);
-
-    let model = role_prompt::ActiveModel {
-        id: Set(Uuid::new_v4()),
-        role: Set(role.to_string()),
-        lang: Set(lang.to_string()),
-        label: Set(label_text.to_string()),
-        prompt: Set(prompt_text.to_string()),
-        created_at: Set(now),
-        updated_at: Set(now),
-    };
-    let saved = model.insert(db).await?;
-    info!("Database auto-healed: added missing role prompt for '{role}' ({lang}) into database");
-    Ok(saved.prompt)
-}
-
-/// Retrieves the human-readable role label for a given role and language from the database.
-///
-/// If missing from database, automatically inserts the default into the database and returns it.
-pub async fn get_or_create_role_label(
-    db: &DatabaseConnection,
-    role: &str,
-    lang: &str,
-) -> Result<String, DbErr> {
-    if let Some(model) = role_prompt::Entity::find()
-        .filter(role_prompt::Column::Role.eq(role))
-        .filter(role_prompt::Column::Lang.eq(lang))
-        .one(db)
-        .await?
-    {
-        return Ok(model.label);
-    }
-
-    // Heal database
-    let _ = get_or_create_role_prompt(db, role, lang).await?;
-    if let Some(model) = role_prompt::Entity::find()
-        .filter(role_prompt::Column::Role.eq(role))
-        .filter(role_prompt::Column::Lang.eq(lang))
-        .one(db)
-        .await?
-    {
-        return Ok(model.label);
-    }
-
-    Ok(fallback_role_label(role, lang).to_string())
+    active.insert(db).await
 }
