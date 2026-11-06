@@ -87,8 +87,10 @@ Because `Simply Agent Hub` shares lineage with the `simply_` family:
 - **Internationalization (i18n) & Extensible Language Packs**:
   - Default language is **English** (`en`), with out-of-the-box **German** (`de`) and **French** (`fr`) support.
   - Automatic browser language detection via `detectBrowserLanguage()` (`navigator.languages` / `navigator.language`), overridable at will by the user with persistence in `localStorage`.
+  - Accessible via a dedicated **Settings Modal** (`#settings-modal`) opened by the header gear icon (`⚙`, `#btn-open-settings`), consolidating language selection and workspace display preferences (compact header, retractable sidebar).
   - Extensible runtime language pack registration via `window.registerLanguagePack(code, dictionary)`.
-  - Dynamic switching at will via `window.setAppLanguage('en' | 'fr' | 'de' | ...)` with immediate DOM translation.
+  - Dynamic switching at will via `window.setAppLanguage('en' | 'fr' | 'de' | ...)` with immediate DOM translation across all tabs, cards, and titles.
+  - **Zero technical leak in UI**: Implementation details such as backend ORM names (`SeaORM`) must NEVER appear in user-facing labels or menu titles (e.g. `Container Fleet` / `Parc de Conteneurs` / `Container-Flotte`).
 - **ECMAScript Syntax Verification**:
   - All JavaScript changes are statically parsed and validated via the `oxc_parser` test in `web-ui/tests/frontend_syntax_test.rs`.
 

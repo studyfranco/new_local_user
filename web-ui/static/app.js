@@ -11,7 +11,7 @@
             tabConsole: "CLI Console, Roles & Native Terminal",
             tabOrchestration: "Multi-CLI Orchestration Channels",
             tabGit: "🔀 Git Diff & Commit",
-            tabInventory: "Container Fleet (SeaORM)",
+            tabInventory: "Container Fleet",
             tabRpc: "JSON-RPC Inspector",
             cliSelectorTitle: "CLI Container Selection",
             cliSelectorSubtitle: "Select, rename, assign a role, or authenticate any of your CLI instances.",
@@ -69,7 +69,7 @@
             clisJoinedChannelTitle: "CLIs in this Channel",
             clisJoinedChannelHint: "Check the instances that participate in this channel's exchanges:",
             btnSaveParticipants: "💾 Save Channel Participants",
-            retentionTitle: "🧹 Configurable Retention (SeaORM)",
+            retentionTitle: "🧹 Configurable Retention",
             retentionDaysLabel: "Retention (days, 0 = unlimited)",
             maxMessagesLabel: "Max message count (0 = unlimited)",
             btnSaveRetention: "💾 Apply & Prune",
@@ -88,7 +88,7 @@
             recentCommitsTitle: "Recent Commits",
             unifiedDiffTitle: "Unified Diff (`git diff HEAD`)",
             btnRevertAll: "↩ Revert entire workspace",
-            inventoryTitle: "Registered CLI Container Fleet (SeaORM: SQLite / Postgres / MariaDB)",
+            inventoryTitle: "Registered CLI Container Fleet",
             inventorySubtitle: "Manage all your Codex, Antigravity, Claude, and Goose instances persisted in the database.",
             btnNewCliContainer: "+ New CLI Container",
             thInstanceName: "Instance Name",
@@ -111,10 +111,10 @@
             tmuxSessionReady: "(Tmux session ready)",
             cleanWorkingTree: "Clean working tree (0 modified files)",
             noDiffDetected: "No uncommitted changes in this repository.",
-            roleSaved: (role) => `Role "${role}" and system prompt saved in SeaORM database.`,
+            roleSaved: (role) => `Role "${role}" and system prompt saved in database.`,
             onboardingSent: (role, name) => `Sending identity and role prompt (${role}) to ${name}...`,
             onboardSuccess: (role) => `Role "${role}" initialized.`,
-            participantsUpdated: "Channel participants updated in SeaORM database.",
+            participantsUpdated: "Channel participants updated in database.",
             retentionApplied: (days, max, pruned) => `Retention applied (${days}d / max ${max} messages). Pruned: ${pruned}.`,
             btnCompactHeader: "🗕 Header",
             btnExpandHeader: "🗖 Header",
@@ -122,6 +122,14 @@
             btnExpandSidebar: "▶ Sidebar",
             btnMaximizeTerm: "🗖 Maximize",
             btnRestoreTerm: "🗗 Restore",
+            btnOpenSettings: "⚙",
+            settingsTitle: "⚙ Settings & Preferences",
+            settingsLangLabel: "Interface Language",
+            settingsLangHint: "Choose your preferred interface language. Additional languages can be added dynamically.",
+            settingsDisplayLabel: "Ergonomics & Display Options",
+            settingsCompactHeader: "Compact header layout (maximize vertical space)",
+            settingsRetractSidebar: "Retract left sidebar (maximize horizontal workspace)",
+            settingsClose: "Close",
         },
         fr: {
             appTitle: "Simply Agent Hub",
@@ -132,7 +140,7 @@
             tabConsole: "Console CLI, Rôles & Terminal Natif",
             tabOrchestration: "Canaux d'Orchestration Multi-CLIs",
             tabGit: "🔀 Git Diff & Commit",
-            tabInventory: "Parc de Conteneurs (SeaORM)",
+            tabInventory: "Parc de Conteneurs",
             tabRpc: "Inspecteur JSON-RPC",
             cliSelectorTitle: "Sélection du Conteneur CLI",
             cliSelectorSubtitle: "Choisissez, renommez, attribuez un rôle ou authentifiez n'importe laquelle de vos instances.",
@@ -190,7 +198,7 @@
             clisJoinedChannelTitle: "CLIs connectés à ce canal",
             clisJoinedChannelHint: "Cochez les instances qui participent aux échanges de ce canal :",
             btnSaveParticipants: "💾 Enregistrer les participants du canal",
-            retentionTitle: "🧹 Rétention Paramétrable (SeaORM)",
+            retentionTitle: "🧹 Rétention Paramétrable",
             retentionDaysLabel: "Rétention (jours, 0 = illimité)",
             maxMessagesLabel: "Nombre max de messages conservés (0 = illimité)",
             btnSaveRetention: "💾 Appliquer & Purger",
@@ -209,7 +217,7 @@
             recentCommitsTitle: "Derniers Commits",
             unifiedDiffTitle: "Diff Unifié (`git diff HEAD`)",
             btnRevertAll: "↩ Revert tout le workspace",
-            inventoryTitle: "Parc de Conteneurs CLI enregistrés (SeaORM : SQLite / Postgres / MariaDB)",
+            inventoryTitle: "Parc de Conteneurs CLI enregistrés",
             inventorySubtitle: "Gérez l'ensemble de vos instances Codex, Antigravity, Claude et Goose persistées en base de données.",
             btnNewCliContainer: "+ Nouveau Conteneur CLI",
             thInstanceName: "Nom de l'instance",
@@ -232,10 +240,10 @@
             tmuxSessionReady: "(Session tmux prête)",
             cleanWorkingTree: "Arbre de travail propre (0 fichier modifié)",
             noDiffDetected: "Aucune modification non commitée dans ce dépôt.",
-            roleSaved: (role) => `Rôle « ${role} » et prompt système enregistrés en base SeaORM.`,
+            roleSaved: (role) => `Rôle « ${role} » et prompt système enregistrés en base de données.`,
             onboardingSent: (role, name) => `Envoi du prompt d'identité et de rôle (${role}) à ${name}...`,
             onboardSuccess: (role) => `Rôle « ${role} » initialisé.`,
-            participantsUpdated: "Participants du canal mis à jour en base SeaORM.",
+            participantsUpdated: "Participants du canal mis à jour en base de données.",
             retentionApplied: (days, max, pruned) => `Politique appliquée (${days}j / max ${max} messages). Messages purgés: ${pruned}.`,
             btnCompactHeader: "🗕 En-tête",
             btnExpandHeader: "🗖 En-tête",
@@ -243,6 +251,14 @@
             btnExpandSidebar: "▶ Menu",
             btnMaximizeTerm: "🗖 Agrandir",
             btnRestoreTerm: "🗗 Réduire",
+            btnOpenSettings: "⚙",
+            settingsTitle: "⚙ Paramètres & Préférences",
+            settingsLangLabel: "Langue de l'interface",
+            settingsLangHint: "Choisissez votre langue d'affichage. De nouvelles langues peuvent être chargées dynamiquement.",
+            settingsDisplayLabel: "Ergonomie & Options d'affichage",
+            settingsCompactHeader: "En-tête compact (maximiser l'espace vertical)",
+            settingsRetractSidebar: "Rétracter le volet gauche (maximiser la largeur de travail)",
+            settingsClose: "Fermer",
         },
         de: {
             appTitle: "Simply Agent Hub",
@@ -253,7 +269,7 @@
             tabConsole: "CLI-Konsole, Rollen & Natives Terminal",
             tabOrchestration: "Multi-CLI Orchestrierungskanäle",
             tabGit: "🔀 Git Diff & Commit",
-            tabInventory: "Container-Flotte (SeaORM)",
+            tabInventory: "Container-Flotte",
             tabRpc: "JSON-RPC Inspektor",
             cliSelectorTitle: "CLI-Container-Auswahl",
             cliSelectorSubtitle: "Wählen, benennen, weisen Sie eine Rolle zu oder authentifizieren Sie eine Ihrer CLI-Instanzen.",
@@ -311,7 +327,7 @@
             clisJoinedChannelTitle: "CLIs in diesem Kanal",
             clisJoinedChannelHint: "Wählen Sie die Instanzen aus, die an diesem Kanal teilnehmen:",
             btnSaveParticipants: "💾 Kanalteilnehmer speichern",
-            retentionTitle: "🧹 Konfigurierbare Aufbewahrung (SeaORM)",
+            retentionTitle: "🧹 Konfigurierbare Aufbewahrung",
             retentionDaysLabel: "Aufbewahrung (Tage, 0 = unbegrenzt)",
             maxMessagesLabel: "Max. Nachrichtenanzahl (0 = unbegrenzt)",
             btnSaveRetention: "💾 Anwenden & Bereinigen",
@@ -330,7 +346,7 @@
             recentCommitsTitle: "Neueste Commits",
             unifiedDiffTitle: "Unified Diff (`git diff HEAD`)",
             btnRevertAll: "↩ Gesamten Workspace zurücksetzen",
-            inventoryTitle: "Registrierte CLI-Container-Flotte (SeaORM: SQLite / Postgres / MariaDB)",
+            inventoryTitle: "Registrierte CLI-Container-Flotte",
             inventorySubtitle: "Verwalten Sie alle in der Datenbank gespeicherten Codex-, Antigravity-, Claude- und Goose-Instanzen.",
             btnNewCliContainer: "+ Neuer CLI-Container",
             thInstanceName: "Instanzname",
@@ -353,10 +369,10 @@
             tmuxSessionReady: "(Tmux-Sitzung bereit)",
             cleanWorkingTree: "Sauberer Arbeitsbaum (0 geänderte Dateien)",
             noDiffDetected: "Keine ungespeicherten Änderungen in diesem Repository.",
-            roleSaved: (role) => `Rolle "${role}" und Systemprompt in SeaORM-Datenbank gespeichert.`,
+            roleSaved: (role) => `Rolle "${role}" und Systemprompt in Datenbank gespeichert.`,
             onboardingSent: (role, name) => `Sende Identität und Rollen-Prompt (${role}) an ${name}...`,
             onboardSuccess: (role) => `Rolle "${role}" initialisiert.`,
-            participantsUpdated: "Kanalteilnehmer in SeaORM-Datenbank aktualisiert.",
+            participantsUpdated: "Kanalteilnehmer in Datenbank aktualisiert.",
             retentionApplied: (days, max, pruned) => `Aufbewahrung angewendet (${days} Tage / max. ${max} Nachrichten). Bereinigt: ${pruned}.`,
             btnCompactHeader: "🗕 Kopfzeile",
             btnExpandHeader: "🗖 Kopfzeile",
@@ -364,6 +380,14 @@
             btnExpandSidebar: "▶ Menü",
             btnMaximizeTerm: "🗖 Maximieren",
             btnRestoreTerm: "🗗 Verkleinern",
+            btnOpenSettings: "⚙",
+            settingsTitle: "⚙ Einstellungen & Präferenzen",
+            settingsLangLabel: "Oberflächensprache",
+            settingsLangHint: "Wählen Sie Ihre bevorzugte Oberflächensprache. Weitere Sprachen können dynamisch geladen werden.",
+            settingsDisplayLabel: "Ergonomie & Anzeigeoptionen",
+            settingsCompactHeader: "Kompakte Kopfzeile (vertikalen Platz maximieren)",
+            settingsRetractSidebar: "Linke Seitenleiste einklappen (horizontalen Arbeitsbereich maximieren)",
+            settingsClose: "Schließen",
         }
     };
 
@@ -866,7 +890,7 @@
             state.activeInstanceId = saved.id;
             $("cli-form-box").classList.add("hidden");
             await loadInstances();
-            appendMsg("console-messages", "system", "SeaORM", `Instance "${saved.name}" (${saved.role}) saved.`);
+            appendMsg("console-messages", "system", "Database", `Instance "${saved.name}" (${saved.role}) saved.`);
         }
     });
 
@@ -1670,7 +1694,7 @@
         appendMsg(
             "channel-messages",
             "system",
-            "SeaORM Retention",
+            "Database Retention",
             t("retentionApplied", retention_days, max_messages, pruneData.pruned ?? 0)
         );
     });
@@ -1839,6 +1863,10 @@
         if (btn) {
             btn.textContent = shouldCollapse ? t("btnExpandSidebar") : t("btnToggleSidebar");
         }
+        const cb = $("settings-toggle-sidebar");
+        if (cb) {
+            cb.checked = shouldCollapse;
+        }
     }
 
     function toggleCompactHeader(force) {
@@ -1850,11 +1878,31 @@
         if (btn) {
             btn.textContent = shouldBeCompact ? t("btnExpandHeader") : t("btnCompactHeader");
         }
+        const cb = $("settings-toggle-compact");
+        if (cb) {
+            cb.checked = shouldBeCompact;
+        }
+    }
+
+    function openSettingsModal() {
+        const modal = $("settings-modal");
+        if (!modal) return;
+        const compactCb = $("settings-toggle-compact");
+        if (compactCb) compactCb.checked = document.body.classList.contains("compact-header");
+        const sidebarCb = $("settings-toggle-sidebar");
+        if (sidebarCb) sidebarCb.checked = document.body.classList.contains("sidebar-collapsed-active");
+        modal.classList.remove("hidden");
+    }
+
+    function closeSettingsModal() {
+        $("settings-modal")?.classList.add("hidden");
     }
 
     window.toggleSidebar = toggleSidebar;
     window.toggleCompactHeader = toggleCompactHeader;
     window.toggleTerminalMaximize = toggleTerminalMaximize;
+    window.openSettingsModal = openSettingsModal;
+    window.closeSettingsModal = closeSettingsModal;
     window.detectBrowserLanguage = detectBrowserLanguage;
     window.renderLanguageSwitcher = renderLanguageSwitcher;
     window.I18N = I18N;
@@ -1903,9 +1951,22 @@
 
     $("btn-toggle-sidebar")?.addEventListener("click", () => toggleSidebar());
     $("btn-toggle-compact-header")?.addEventListener("click", () => toggleCompactHeader());
+    $("btn-open-settings")?.addEventListener("click", openSettingsModal);
+    $("btn-close-settings")?.addEventListener("click", closeSettingsModal);
+    $("btn-close-settings-x")?.addEventListener("click", closeSettingsModal);
+    $("settings-modal")?.addEventListener("click", (e) => {
+        if (e.target === $("settings-modal")) {
+            closeSettingsModal();
+        }
+    });
 
     document.addEventListener("keydown", (e) => {
         if (e.key === "Escape") {
+            const modal = $("settings-modal");
+            if (modal && !modal.classList.contains("hidden")) {
+                closeSettingsModal();
+                return;
+            }
             const drawer = $("native-terminal-drawer");
             if (drawer?.classList.contains("maximized")) {
                 toggleTerminalMaximize(false);

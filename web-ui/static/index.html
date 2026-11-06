@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Simply Agent Hub — Multi-instance CLI Manager, Orchestration Roles, Native Interactive Terminal & SeaORM Git Viewer.">
+    <meta name="description" content="Simply Agent Hub — Multi-instance CLI Manager, Orchestration Roles, Native Interactive Terminal &amp; Git Viewer.">
     <title>Simply Agent Hub</title>
     <link rel="stylesheet" href="/style.css">
 </head>
@@ -18,13 +18,9 @@
                     <h1>Simply Agent Hub</h1>
                 </div>
                 <div class="header-actions">
-                    <div class="lang-selector" id="lang-selector" title="Language selection / Sprachauswahl">
-                        <button id="lang-btn-en" class="btn-lang" onclick="setAppLanguage('en')" title="Switch to English">EN</button>
-                        <button id="lang-btn-fr" class="btn-lang" onclick="setAppLanguage('fr')" title="Passer en Français">FR</button>
-                        <button id="lang-btn-de" class="btn-lang" onclick="setAppLanguage('de')" title="Auf Deutsch umstellen">DE</button>
-                    </div>
                     <button id="btn-toggle-sidebar" class="btn btn-secondary btn-sm" title="Toggle left sidebar (Retract / Expand)" data-i18n="btnToggleSidebar">◀ Sidebar</button>
                     <button id="btn-toggle-compact-header" class="btn btn-secondary btn-sm" title="Toggle compact header (Maximize space)" data-i18n="btnCompactHeader">🗕 Header</button>
+                    <button id="btn-open-settings" class="btn btn-secondary btn-sm" title="Settings / Paramètres" onclick="openSettingsModal()" data-i18n="btnOpenSettings">⚙</button>
                     <span id="header-instances-count" class="badge badge-tier">0 CLIs registered</span>
                     <span id="header-active-cli-badge" class="badge badge-online">No CLI selected</span>
                     <button id="btn-refresh-all" class="btn btn-secondary btn-sm" data-i18n="btnRefreshAll">↻ Refresh Status</button>
@@ -36,7 +32,7 @@
                 <button class="tab-btn active" data-tab="console" role="tab" aria-selected="true" data-i18n="tabConsole">CLI Console, Roles &amp; Native Terminal</button>
                 <button class="tab-btn" data-tab="orchestration" role="tab" aria-selected="false" data-i18n="tabOrchestration">Multi-CLI Orchestration Channels</button>
                 <button class="tab-btn" data-tab="git" role="tab" aria-selected="false" data-i18n="tabGit">🔀 Git Diff &amp; Commit</button>
-                <button class="tab-btn" data-tab="inventory" role="tab" aria-selected="false" data-i18n="tabInventory">Container Fleet (SeaORM)</button>
+                <button class="tab-btn" data-tab="inventory" role="tab" aria-selected="false" data-i18n="tabInventory">Container Fleet</button>
                 <button class="tab-btn" data-tab="rpc" role="tab" aria-selected="false" data-i18n="tabRpc">JSON-RPC Inspector</button>
             </nav>
         </div>
@@ -302,7 +298,7 @@
                     <button id="btn-save-participants" class="btn btn-secondary btn-sm" style="margin-top:0.65rem;width:100%;" data-i18n="btnSaveParticipants">💾 Save Channel Participants</button>
 
                     <div class="subcard" style="margin-top:1rem;">
-                        <h3 data-i18n="retentionTitle">🧹 Configurable Retention (SeaORM)</h3>
+                        <h3 data-i18n="retentionTitle">🧹 Configurable Retention</h3>
                         <div class="form-group">
                             <label for="channel-retention-days" data-i18n="retentionDaysLabel">Retention (days, 0 = unlimited)</label>
                             <input id="channel-retention-days" type="number" min="0" class="input-field mono" value="30">
@@ -395,13 +391,13 @@
         </main>
 
         <!-- ═════════════════════════════════════════════════════════════════ -->
-        <!-- TAB 4: CONTAINER FLEET (SEAORM INVENTORY)                         -->
+        <!-- TAB 4: CONTAINER FLEET (INVENTORY)                                -->
         <!-- ═════════════════════════════════════════════════════════════════ -->
         <main id="tab-inventory" class="tab-panel">
             <section class="card">
                 <div class="chat-header">
                     <div>
-                        <h2 data-i18n="inventoryTitle">Registered CLI Container Fleet (SeaORM: SQLite / Postgres / MariaDB)</h2>
+                        <h2 data-i18n="inventoryTitle">Registered CLI Container Fleet</h2>
                         <p class="subtitle" style="margin-bottom:0;" data-i18n="inventorySubtitle">Manage all your Codex, Antigravity, Claude, and Goose instances persisted in the database.</p>
                     </div>
                     <button id="btn-inventory-add" class="btn btn-primary btn-sm" data-i18n="btnNewCliContainer">+ New CLI Container</button>
@@ -443,6 +439,46 @@
                 <div id="rpc-log" class="messages-stream" style="font-family:var(--font-mono);font-size:0.8rem;"></div>
             </section>
         </main>
+    </div>
+
+    <!-- ═════════════════════════════════════════════════════════════════ -->
+    <!-- SETTINGS & PREFERENCES MODAL                                      -->
+    <!-- ═════════════════════════════════════════════════════════════════ -->
+    <div id="settings-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3 id="settings-modal-title" data-i18n="settingsTitle">⚙ Settings &amp; Preferences</h3>
+                <button id="btn-close-settings-x" class="btn-modal-close" title="Close" onclick="closeSettingsModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group" style="margin-bottom: 1.25rem;">
+                    <label data-i18n="settingsLangLabel" style="display:block;margin-bottom:0.4rem;font-weight:600;">Interface Language</label>
+                    <p class="subtitle" style="margin-bottom:0.75rem;font-size:0.8rem;" data-i18n="settingsLangHint">Choose your preferred interface language. Additional languages can be added dynamically.</p>
+                    <div class="lang-selector" id="lang-selector" title="Language selection / Sprachauswahl">
+                        <button id="lang-btn-en" class="btn-lang" onclick="setAppLanguage('en')" title="Switch to English">EN</button>
+                        <button id="lang-btn-fr" class="btn-lang" onclick="setAppLanguage('fr')" title="Passer en Français">FR</button>
+                        <button id="lang-btn-de" class="btn-lang" onclick="setAppLanguage('de')" title="Auf Deutsch umstellen">DE</button>
+                    </div>
+                </div>
+
+                <div class="form-group" style="margin-bottom: 1rem; border-top: 1px solid var(--border); padding-top: 1rem;">
+                    <label data-i18n="settingsDisplayLabel" style="display:block;margin-bottom:0.5rem;font-weight:600;">Ergonomics &amp; Display Options</label>
+                    <div style="display:flex;flex-direction:column;gap:0.6rem;font-size:0.85rem;">
+                        <label style="display:flex;align-items:center;gap:0.6rem;cursor:pointer;">
+                            <input type="checkbox" id="settings-toggle-compact" onchange="toggleCompactHeader(this.checked)">
+                            <span data-i18n="settingsCompactHeader">Compact header layout (maximize vertical space)</span>
+                        </label>
+                        <label style="display:flex;align-items:center;gap:0.6rem;cursor:pointer;">
+                            <input type="checkbox" id="settings-toggle-sidebar" onchange="toggleSidebar(!this.checked)">
+                            <span data-i18n="settingsRetractSidebar">Retract left sidebar (maximize horizontal workspace)</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-actions" style="margin-top:1.25rem;border-top:1px solid var(--border);padding-top:0.75rem;">
+                <button id="btn-close-settings" class="btn btn-secondary btn-sm" onclick="closeSettingsModal()" data-i18n="settingsClose">Close</button>
+            </div>
+        </div>
     </div>
 
     <script src="/app.js"></script>

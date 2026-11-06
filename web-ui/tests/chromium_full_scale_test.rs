@@ -452,10 +452,39 @@ async fn full_scale_chromium_and_local_instances_e2e() {
         "Browser detection should match German 'de' from navigator.languages"
     );
 
-    // 7b. Switch to German (DE) by clicking the DE button in Chromium
+    // 7b. Open Settings Modal via Gear Icon Button (⚙)
     let _ = cdp_eval(
         &mut cdp_ws,
         303,
+        "document.getElementById('btn-open-settings')?.click(); true",
+    )
+    .await;
+    sleep(Duration::from_millis(300)).await;
+
+    let is_modal_visible = cdp_eval(
+        &mut cdp_ws,
+        304,
+        "!document.getElementById('settings-modal')?.classList.contains('hidden')",
+    )
+    .await;
+    assert_eq!(
+        is_modal_visible,
+        json!(true),
+        "Settings modal should open when clicking #btn-open-settings"
+    );
+
+    // Screenshot 13: Settings Modal with language switcher and display options
+    save_screenshot(
+        &mut cdp_ws,
+        305,
+        &screenshot_dir.join("chromium_13_settings_modal.png"),
+    )
+    .await;
+
+    // Switch to German (DE) by clicking the DE button inside the Settings modal
+    let _ = cdp_eval(
+        &mut cdp_ws,
+        306,
         "document.getElementById('lang-btn-de')?.click(); true",
     )
     .await;
@@ -463,21 +492,23 @@ async fn full_scale_chromium_and_local_instances_e2e() {
 
     let fleet_tab_de = cdp_eval(
         &mut cdp_ws,
-        304,
+        307,
         "document.querySelector('[data-tab=\"inventory\"]')?.innerText || ''",
     )
     .await;
+    let fleet_tab_de_str = fleet_tab_de.as_str().unwrap_or("");
     assert!(
-        fleet_tab_de
-            .as_str()
-            .unwrap_or("")
-            .contains("Container-Flotte"),
-        "UI should dynamically translate to German 'Container-Flotte', got: {fleet_tab_de}"
+        fleet_tab_de_str.contains("Container-Flotte"),
+        "UI should dynamically translate to German 'Container-Flotte', got: {fleet_tab_de_str}"
+    );
+    assert!(
+        !fleet_tab_de_str.contains("SeaORM"),
+        "Container Fleet tab label must not display internal technical 'SeaORM' tag"
     );
 
     let git_btn_de = cdp_eval(
         &mut cdp_ws,
-        305,
+        308,
         "document.getElementById('btn-git-refresh')?.innerText || ''",
     )
     .await;
@@ -486,10 +517,19 @@ async fn full_scale_chromium_and_local_instances_e2e() {
         "Git button should translate to German '↻ Analysieren', got: {git_btn_de}"
     );
 
+    // Close settings modal
+    let _ = cdp_eval(
+        &mut cdp_ws,
+        309,
+        "document.getElementById('btn-close-settings')?.click(); true",
+    )
+    .await;
+    sleep(Duration::from_millis(200)).await;
+
     // Screenshot 8: German UI in Chromium
     save_screenshot(
         &mut cdp_ws,
-        306,
+        310,
         &screenshot_dir.join("chromium_08_i18n_german.png"),
     )
     .await;
@@ -497,28 +537,28 @@ async fn full_scale_chromium_and_local_instances_e2e() {
     // 7c. Test Dynamic Runtime Language Pack Installation (e.g. Spanish 'es')
     let _ = cdp_eval(
         &mut cdp_ws,
-        307,
-        "(() => { window.registerLanguagePack('es', { tabInventory: 'Flota de Contenedores (SeaORM)', btnRefreshAll: '↻ Actualizar Estado' }); return true; })()",
+        311,
+        "(() => { window.registerLanguagePack('es', { tabInventory: 'Flota de Contenedores', btnRefreshAll: '↻ Actualizar Estado' }); return true; })()",
     )
     .await;
     sleep(Duration::from_millis(300)).await;
 
     let has_es_btn = cdp_eval(
         &mut cdp_ws,
-        308,
+        312,
         "Boolean(document.getElementById('lang-btn-es'))",
     )
     .await;
     assert_eq!(
         has_es_btn,
         json!(true),
-        "Dynamic language pack registration should create a new switcher button #lang-btn-es"
+        "Dynamic language pack registration should create a new switcher button #lang-btn-es inside settings"
     );
 
     // Switch to newly installed Spanish language pack
     let _ = cdp_eval(
         &mut cdp_ws,
-        309,
+        313,
         "document.getElementById('lang-btn-es')?.click(); true",
     )
     .await;
@@ -526,22 +566,24 @@ async fn full_scale_chromium_and_local_instances_e2e() {
 
     let fleet_tab_es = cdp_eval(
         &mut cdp_ws,
-        310,
+        314,
         "document.querySelector('[data-tab=\"inventory\"]')?.innerText || ''",
     )
     .await;
+    let fleet_tab_es_str = fleet_tab_es.as_str().unwrap_or("");
     assert!(
-        fleet_tab_es
-            .as_str()
-            .unwrap_or("")
-            .contains("Flota de Contenedores"),
-        "UI should translate via installed language pack, got: {fleet_tab_es}"
+        fleet_tab_es_str.contains("Flota de Contenedores"),
+        "UI should translate via installed language pack, got: {fleet_tab_es_str}"
+    );
+    assert!(
+        !fleet_tab_es_str.contains("SeaORM"),
+        "Dynamic language pack tab label must not contain 'SeaORM'"
     );
 
     // Screenshot 9: Dynamically installed language pack in Chromium
     save_screenshot(
         &mut cdp_ws,
-        311,
+        315,
         &screenshot_dir.join("chromium_09_i18n_dynamic_plugin.png"),
     )
     .await;
@@ -549,7 +591,7 @@ async fn full_scale_chromium_and_local_instances_e2e() {
     // 7d. Switch to French (FR)
     let _ = cdp_eval(
         &mut cdp_ws,
-        312,
+        316,
         "document.getElementById('lang-btn-fr')?.click(); true",
     )
     .await;
@@ -557,21 +599,23 @@ async fn full_scale_chromium_and_local_instances_e2e() {
 
     let fleet_tab_fr = cdp_eval(
         &mut cdp_ws,
-        313,
+        317,
         "document.querySelector('[data-tab=\"inventory\"]')?.innerText || ''",
     )
     .await;
+    let fleet_tab_fr_str = fleet_tab_fr.as_str().unwrap_or("");
     assert!(
-        fleet_tab_fr
-            .as_str()
-            .unwrap_or("")
-            .contains("Parc de Conteneurs"),
-        "UI should dynamically translate to French, got: {fleet_tab_fr}"
+        fleet_tab_fr_str.contains("Parc de Conteneurs"),
+        "UI should dynamically translate to French, got: {fleet_tab_fr_str}"
+    );
+    assert!(
+        !fleet_tab_fr_str.contains("SeaORM"),
+        "French tab label must not contain 'SeaORM'"
     );
 
     let git_btn_fr = cdp_eval(
         &mut cdp_ws,
-        314,
+        318,
         "document.getElementById('btn-git-refresh')?.innerText || ''",
     )
     .await;
@@ -606,6 +650,10 @@ async fn full_scale_chromium_and_local_instances_e2e() {
     assert!(
         fleet_tab_back.as_str().unwrap_or("").contains("Fleet"),
         "UI should dynamically switch back to English, got: {fleet_tab_back}"
+    );
+    assert!(
+        !fleet_tab_back.as_str().unwrap_or("").contains("SeaORM"),
+        "English tab label must not contain 'SeaORM'"
     );
 
     // 8. Test Agent Role Selection and Onboarding in Chromium

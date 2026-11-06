@@ -71,6 +71,23 @@ fn app_js_and_html_have_complete_i18n_support() {
         "index.html must have onclick setAppLanguage de"
     );
 
+    assert!(
+        html.contains("id=\"btn-open-settings\""),
+        "index.html must have #btn-open-settings gear icon button"
+    );
+    assert!(
+        html.contains("id=\"settings-modal\""),
+        "index.html must have #settings-modal for settings and language switching"
+    );
+    assert!(
+        !html.contains("Container Fleet (SeaORM)"),
+        "index.html must not expose internal technical SeaORM label in Container Fleet tab"
+    );
+    assert!(
+        !html.contains("Configurable Retention (SeaORM)"),
+        "index.html must not expose internal technical SeaORM label in Retention title"
+    );
+
     let js_path = repo_path("static/app.js");
     let js = std::fs::read_to_string(&js_path)
         .unwrap_or_else(|e| panic!("app.js must be readable: {e}"));
@@ -84,6 +101,8 @@ fn app_js_and_html_have_complete_i18n_support() {
     assert!(js.contains("navigator.languages"));
     assert!(js.contains("localStorage.getItem(\"agent_hub_lang\")"));
     assert!(js.contains("window.setAppLanguage"));
+    assert!(js.contains("window.openSettingsModal"));
+    assert!(js.contains("window.closeSettingsModal"));
 }
 
 #[test]

@@ -90,6 +90,16 @@
   - **High-Screen & Maximized Native Terminal**: Increased default terminal drawer height to 60vh (min 440px) and added `#btn-term-maximize` allowing the terminal to occupy 98% of viewport width and height (`fixed` overlay with Escape key restoration).
   - Validated via automated Chromium CDP test scenarios, generating screenshots `chromium_10_compact_header.png`, `chromium_11_sidebar_retracted.png`, and `chromium_12_terminal_maximized.png`.
 
+#### 7. Settings Gear Modal (⚙) & Technical UI Label Cleansing (Removal of "SeaORM")
+* **Finding**: Raw language buttons (`EN`, `FR`, `DE`) cluttered the top header. In addition, the internal technical library name `(SeaORM)` had bled into the user interface (e.g. `Container Fleet (SeaORM)`), confusing end users who should see clean, domain-specific labels.
+* **Resolution**:
+  - **Settings Gear Modal (`#settings-modal`)**: Replaced raw header buttons with a discrete gear icon (`⚙`, `#btn-open-settings`) opening a KDE Plasma dark modal overlay. The modal houses the dynamic language selector (`#lang-selector`) and ergonomics checkboxes (compact header, retractable sidebar) with Escape key and backdrop dismissal.
+  - **Technical UI Label Cleansing**: Completely removed all `(SeaORM)` suffixes from user-facing tabs, card titles, and subtitles across `index.html` and `app.js` (`I18N.en`, `I18N.fr`, `I18N.de`):
+    - EN: `Container Fleet`, `Configurable Retention`, `Registered CLI Container Fleet`
+    - FR: `Parc de Conteneurs`, `Rétention Paramétrable`, `Parc de Conteneurs CLI enregistrés`
+    - DE: `Container-Flotte`, `Konfigurierbare Aufbewahrung`, `Registrierte CLI-Container-Flotte`
+  - **Automated Verification**: Updated `frontend_syntax_test.rs` and `chromium_full_scale_test.rs` to open the modal via `#btn-open-settings`, assert that labels translate dynamically without any remaining "SeaORM" substrings, and captured screenshot artifact `chromium_13_settings_modal.png`.
+
 ---
 
 ### Verification Summary
