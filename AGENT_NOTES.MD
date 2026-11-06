@@ -41,14 +41,14 @@
   - Resolved all clippy lints across production and test targets.
   - Verified with `cargo clippy --all-targets -- -D warnings` (0 warnings, 0 errors).
 
-#### 3. Internationalization (i18n) & English by Default
-* **Finding**: Prompts and UI labels were originally authored in French, lacking a structured multi-language dictionary.
+#### 3. Internationalization (i18n), Browser Detection & Extensible Language Packs
+* **Finding**: Prompts and UI labels were originally authored in French, lacking a structured multi-language dictionary, automatic browser detection, and modular extensibility for additional languages (such as German).
 * **Resolution**:
-  - Switched default application language to English (`en`).
-  - Added extensible `I18N = { en: {...}, fr: {...} }` dictionary and translation helper `t(key, ...args)` in `web-ui/static/app.js`.
-  - Added interactive header switcher (`#lang-btn-en`, `#lang-btn-fr`) with persistence in `localStorage.getItem("agent_hub_lang")`.
-  - Updated `db.rs` with multilingual role presets and onboarding prompts (`default_role_prompt_lang(role, lang)`).
-  - Updated API endpoints (`/api/roles/presets?lang=en|fr` and `POST /api/instances/{id}/onboard`).
+  - Implemented automatic browser language detection via `detectBrowserLanguage()` inspecting `navigator.languages` / `navigator.language` while prioritizing explicit user preference in `localStorage`.
+  - Added extensible language architecture with `registerLanguagePack(code, dictionary)` and dynamic switcher rendering (`renderLanguageSwitcher()`).
+  - Added full German (`de`) localization across UI labels, role presets, and agent onboarding briefings (`[AGENTEN-ONBOARDING — SIMPLY AGENT HUB]`).
+  - Updated `web-ui/src/db.rs` and `web-ui/src/main.rs` to support German presets and onboarding prompts (`/api/roles/presets?lang=de`).
+  - Validated dynamic switching at will across EN, FR, DE, and dynamically installed language packs (e.g. ES) in the real-world Chromium CDP test suite, generating screenshot artifacts `chromium_08_i18n_german.png` and `chromium_09_i18n_dynamic_plugin.png`.
 
 #### 4. Full-Scale Real-World Chromium CDP Test Suite
 * **Finding**: Previous tests were limited to synthetic mock requests and lacked end-to-end browser verification.

@@ -427,7 +427,7 @@ async fn full_scale_chromium_and_local_instances_e2e() {
     )
     .await;
 
-    // 7. Dynamic Internationalization (i18n) Switcher Test (EN -> FR -> EN)
+    // 7. Dynamic Internationalization (i18n), Browser Detection & Extensible Language Packs
     let fleet_tab_en = cdp_eval(
         &mut cdp_ws,
         301,
@@ -439,10 +439,117 @@ async fn full_scale_chromium_and_local_instances_e2e() {
         "Default language should be English, got: {fleet_tab_en}"
     );
 
-    // Switch to French by clicking the FR button in Chromium
-    let _ = cdp_eval(
+    // 7a. Test Browser Language Detection logic
+    let detected_de = cdp_eval(
         &mut cdp_ws,
         302,
+        "(() => { const oldLangs = navigator.languages; try { Object.defineProperty(navigator, 'languages', { value: ['de-DE', 'de', 'en'], configurable: true }); localStorage.removeItem('agent_hub_lang'); const res = window.detectBrowserLanguage(); return res; } finally { Object.defineProperty(navigator, 'languages', { value: oldLangs, configurable: true }); } })()",
+    )
+    .await;
+    assert_eq!(
+        detected_de,
+        json!("de"),
+        "Browser detection should match German 'de' from navigator.languages"
+    );
+
+    // 7b. Switch to German (DE) by clicking the DE button in Chromium
+    let _ = cdp_eval(
+        &mut cdp_ws,
+        303,
+        "document.getElementById('lang-btn-de')?.click(); true",
+    )
+    .await;
+    sleep(Duration::from_millis(500)).await;
+
+    let fleet_tab_de = cdp_eval(
+        &mut cdp_ws,
+        304,
+        "document.querySelector('[data-tab=\"inventory\"]')?.innerText || ''",
+    )
+    .await;
+    assert!(
+        fleet_tab_de
+            .as_str()
+            .unwrap_or("")
+            .contains("Container-Flotte"),
+        "UI should dynamically translate to German 'Container-Flotte', got: {fleet_tab_de}"
+    );
+
+    let git_btn_de = cdp_eval(
+        &mut cdp_ws,
+        305,
+        "document.getElementById('btn-git-refresh')?.innerText || ''",
+    )
+    .await;
+    assert!(
+        git_btn_de.as_str().unwrap_or("").contains("Analysieren"),
+        "Git button should translate to German '↻ Analysieren', got: {git_btn_de}"
+    );
+
+    // Screenshot 8: German UI in Chromium
+    save_screenshot(
+        &mut cdp_ws,
+        306,
+        &screenshot_dir.join("chromium_08_i18n_german.png"),
+    )
+    .await;
+
+    // 7c. Test Dynamic Runtime Language Pack Installation (e.g. Spanish 'es')
+    let _ = cdp_eval(
+        &mut cdp_ws,
+        307,
+        "(() => { window.registerLanguagePack('es', { tabInventory: 'Flota de Contenedores (SeaORM)', btnRefreshAll: '↻ Actualizar Estado' }); return true; })()",
+    )
+    .await;
+    sleep(Duration::from_millis(300)).await;
+
+    let has_es_btn = cdp_eval(
+        &mut cdp_ws,
+        308,
+        "Boolean(document.getElementById('lang-btn-es'))",
+    )
+    .await;
+    assert_eq!(
+        has_es_btn,
+        json!(true),
+        "Dynamic language pack registration should create a new switcher button #lang-btn-es"
+    );
+
+    // Switch to newly installed Spanish language pack
+    let _ = cdp_eval(
+        &mut cdp_ws,
+        309,
+        "document.getElementById('lang-btn-es')?.click(); true",
+    )
+    .await;
+    sleep(Duration::from_millis(400)).await;
+
+    let fleet_tab_es = cdp_eval(
+        &mut cdp_ws,
+        310,
+        "document.querySelector('[data-tab=\"inventory\"]')?.innerText || ''",
+    )
+    .await;
+    assert!(
+        fleet_tab_es
+            .as_str()
+            .unwrap_or("")
+            .contains("Flota de Contenedores"),
+        "UI should translate via installed language pack, got: {fleet_tab_es}"
+    );
+
+    // Screenshot 9: Dynamically installed language pack in Chromium
+    save_screenshot(
+        &mut cdp_ws,
+        311,
+        &screenshot_dir.join("chromium_09_i18n_dynamic_plugin.png"),
+    )
+    .await;
+
+    // 7d. Switch to French (FR)
+    let _ = cdp_eval(
+        &mut cdp_ws,
+        312,
         "document.getElementById('lang-btn-fr')?.click(); true",
     )
     .await;
@@ -450,7 +557,7 @@ async fn full_scale_chromium_and_local_instances_e2e() {
 
     let fleet_tab_fr = cdp_eval(
         &mut cdp_ws,
-        303,
+        313,
         "document.querySelector('[data-tab=\"inventory\"]')?.innerText || ''",
     )
     .await;
@@ -464,7 +571,7 @@ async fn full_scale_chromium_and_local_instances_e2e() {
 
     let git_btn_fr = cdp_eval(
         &mut cdp_ws,
-        304,
+        314,
         "document.getElementById('btn-git-refresh')?.innerText || ''",
     )
     .await;
@@ -476,15 +583,15 @@ async fn full_scale_chromium_and_local_instances_e2e() {
     // Screenshot 5: French UI in Chromium
     save_screenshot(
         &mut cdp_ws,
-        305,
+        315,
         &screenshot_dir.join("chromium_05_i18n_french.png"),
     )
     .await;
 
-    // Switch back to English by clicking the EN button in Chromium
+    // 7e. Switch back to English (EN)
     let _ = cdp_eval(
         &mut cdp_ws,
-        306,
+        316,
         "document.getElementById('lang-btn-en')?.click(); true",
     )
     .await;
@@ -492,7 +599,7 @@ async fn full_scale_chromium_and_local_instances_e2e() {
 
     let fleet_tab_back = cdp_eval(
         &mut cdp_ws,
-        307,
+        317,
         "document.querySelector('[data-tab=\"inventory\"]')?.innerText || ''",
     )
     .await;
@@ -502,13 +609,13 @@ async fn full_scale_chromium_and_local_instances_e2e() {
     );
 
     // 8. Test Agent Role Selection and Onboarding in Chromium
-    let _ = cdp_eval(&mut cdp_ws, 310, "window.switchTab('console'); true").await;
+    let _ = cdp_eval(&mut cdp_ws, 400, "window.switchTab('console'); true").await;
     sleep(Duration::from_millis(300)).await;
 
     // Select the Claude instance in the UI dropdown
     let _ = cdp_eval(
         &mut cdp_ws,
-        311,
+        401,
         "(() => { const sel = document.getElementById('cli-selector'); const inst = window.state.instances.find(i => i.kind === 'claude'); if (inst) { sel.value = inst.id; sel.dispatchEvent(new Event('change')); return inst.name; } return ''; })()",
     )
     .await;
@@ -517,7 +624,7 @@ async fn full_scale_chromium_and_local_instances_e2e() {
     // Change role in the dropdown to "architect"
     let _ = cdp_eval(
         &mut cdp_ws,
-        312,
+        402,
         "(() => { const rsel = document.getElementById('cli-role-selector'); rsel.value = 'architect'; rsel.dispatchEvent(new Event('change')); return rsel.value; })()",
     )
     .await;
@@ -525,7 +632,7 @@ async fn full_scale_chromium_and_local_instances_e2e() {
 
     let prompt_val = cdp_eval(
         &mut cdp_ws,
-        313,
+        403,
         "document.getElementById('cli-role-prompt')?.value || ''",
     )
     .await;
@@ -537,7 +644,7 @@ async fn full_scale_chromium_and_local_instances_e2e() {
     // Click "Initialize Agent" in Chromium
     let _ = cdp_eval(
         &mut cdp_ws,
-        314,
+        404,
         "document.getElementById('btn-onboard-cli')?.click(); true",
     )
     .await;
@@ -546,7 +653,7 @@ async fn full_scale_chromium_and_local_instances_e2e() {
     // Screenshot 6: Agent Role & Mission Onboarding in Chromium
     save_screenshot(
         &mut cdp_ws,
-        315,
+        405,
         &screenshot_dir.join("chromium_06_role_onboarding.png"),
     )
     .await;
@@ -554,7 +661,7 @@ async fn full_scale_chromium_and_local_instances_e2e() {
     // 9. Test Configurable Retention in Chromium
     let _ = cdp_eval(
         &mut cdp_ws,
-        320,
+        500,
         "window.switchTab('orchestration'); true",
     )
     .await;
@@ -562,7 +669,7 @@ async fn full_scale_chromium_and_local_instances_e2e() {
 
     let _ = cdp_eval(
         &mut cdp_ws,
-        321,
+        501,
         "(() => { document.getElementById('channel-retention-days').value = '14'; document.getElementById('channel-max-messages').value = '25'; document.getElementById('btn-save-retention')?.click(); return true; })()",
     )
     .await;
@@ -571,7 +678,7 @@ async fn full_scale_chromium_and_local_instances_e2e() {
     // Screenshot 7: Retention Policy updated in Chromium
     save_screenshot(
         &mut cdp_ws,
-        322,
+        502,
         &screenshot_dir.join("chromium_07_retention_modal.png"),
     )
     .await;

@@ -55,12 +55,20 @@ fn app_js_and_html_have_complete_i18n_support() {
         "index.html must have #lang-btn-fr"
     );
     assert!(
+        html.contains("id=\"lang-btn-de\""),
+        "index.html must have #lang-btn-de"
+    );
+    assert!(
         html.contains("onclick=\"setAppLanguage('en')\""),
         "index.html must have onclick setAppLanguage en"
     );
     assert!(
         html.contains("onclick=\"setAppLanguage('fr')\""),
         "index.html must have onclick setAppLanguage fr"
+    );
+    assert!(
+        html.contains("onclick=\"setAppLanguage('de')\""),
+        "index.html must have onclick setAppLanguage de"
     );
 
     let js_path = repo_path("static/app.js");
@@ -70,6 +78,10 @@ fn app_js_and_html_have_complete_i18n_support() {
     assert!(js.contains("const I18N = {"));
     assert!(js.contains("en: {"));
     assert!(js.contains("fr: {"));
+    assert!(js.contains("de: {"));
+    assert!(js.contains("detectBrowserLanguage"));
+    assert!(js.contains("registerLanguagePack"));
+    assert!(js.contains("navigator.languages"));
     assert!(js.contains("localStorage.getItem(\"agent_hub_lang\")"));
     assert!(js.contains("window.setAppLanguage"));
 }

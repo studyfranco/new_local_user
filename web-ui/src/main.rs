@@ -2237,36 +2237,59 @@ async fn list_role_presets(
     Query(query): Query<RolePresetsQuery>,
 ) -> impl IntoResponse {
     let lang = query.lang.as_deref().unwrap_or("en");
-    let is_fr = lang == "fr";
     let presets = json!([
         {
             "id": "architect",
-            "label": if is_fr { "🏗️ Architecte Logiciel" } else { "🏗️ Software Architect" },
+            "label": match lang {
+                "fr" => "🏗️ Architecte Logiciel",
+                "de" => "🏗️ Software-Architekt",
+                _ => "🏗️ Software Architect",
+            },
             "prompt": db::default_role_prompt_lang("architect", lang)
         },
         {
             "id": "developer",
-            "label": if is_fr { "💻 Développeur Principal" } else { "💻 Lead Developer" },
+            "label": match lang {
+                "fr" => "💻 Développeur Principal",
+                "de" => "💻 Lead-Entwickler",
+                _ => "💻 Lead Developer",
+            },
             "prompt": db::default_role_prompt_lang("developer", lang)
         },
         {
             "id": "reviewer",
-            "label": if is_fr { "🔍 Code Reviewer & Qualité" } else { "🔍 Code Reviewer & QA" },
+            "label": match lang {
+                "fr" => "🔍 Code Reviewer & Qualité",
+                "de" => "🔍 Code-Reviewer & QA",
+                _ => "🔍 Code Reviewer & QA",
+            },
             "prompt": db::default_role_prompt_lang("reviewer", lang)
         },
         {
             "id": "tester",
-            "label": if is_fr { "🧪 Ingénieur QA & Tests E2E" } else { "🧪 QA & E2E Test Engineer" },
+            "label": match lang {
+                "fr" => "🧪 Ingénieur QA & Tests E2E",
+                "de" => "🧪 QA- & E2E-Testingenieur",
+                _ => "🧪 QA & E2E Test Engineer",
+            },
             "prompt": db::default_role_prompt_lang("tester", lang)
         },
         {
             "id": "security",
-            "label": if is_fr { "🛡️ Auditeur Sécurité & DevSecOps" } else { "🛡️ Security & DevSecOps Auditor" },
+            "label": match lang {
+                "fr" => "🛡️ Auditeur Sécurité & DevSecOps",
+                "de" => "🛡️ Sicherheits- & DevSecOps-Auditor",
+                _ => "🛡️ Security & DevSecOps Auditor",
+            },
             "prompt": db::default_role_prompt_lang("security", lang)
         },
         {
             "id": "general",
-            "label": if is_fr { "🤖 Agent Polyvalent" } else { "🤖 Versatile Agent" },
+            "label": match lang {
+                "fr" => "🤖 Agent Polyvalent",
+                "de" => "🤖 Vielseitiger Agent",
+                _ => "🤖 Versatile Agent",
+            },
             "prompt": db::default_role_prompt_lang("general", lang)
         }
     ]);
@@ -2303,8 +2326,8 @@ async fn onboard_instance_handler(
             }
         });
 
-    let onboarding_prompt = if lang == "fr" {
-        format!(
+    let onboarding_prompt = match lang {
+        "fr" => format!(
             "[INITIALISATION D'AGENT — SIMPLY AGENT HUB]\n\
             1. Ton identité : Tu es l'instance '{}' (moteur CLI : '{}', dossier de travail : '{}').\n\
             2. Ton rôle attribué : '{}'.\n\
@@ -2314,9 +2337,19 @@ async fn onboard_instance_handler(
             - Tu peux interpeller un autre agent du collectif avec @NomAgent.\n\
             Confirme en une phrase concise que tu as bien pris connaissance de ton identité et de ton rôle '{}'.",
             inst.name, inst.kind, inst.default_cwd, inst.role, base_role_prompt, channel_name, inst.role
-        )
-    } else {
-        format!(
+        ),
+        "de" => format!(
+            "[AGENTEN-ONBOARDING — SIMPLY AGENT HUB]\n\
+            1. Deine Identität: Du bist die Instanz '{}' (CLI-Engine: '{}', Arbeitsverzeichnis: '{}').\n\
+            2. Deine zugewiesene Rolle: '{}'.\n\
+            3. Deine Mission & Richtlinien:\n{}\n\
+            4. Orchestrierungsregeln:\n\
+            - Du bist mit dem Orchestrierungskanal '{}' verbunden.\n\
+            - Du kannst jeden Agenten im Kollektiv mit @AgentenName erwähnen.\n\
+            Bestätige in einem kurzen Satz, dass du deine Identität und Rolle '{}' verstanden hast.",
+            inst.name, inst.kind, inst.default_cwd, inst.role, base_role_prompt, channel_name, inst.role
+        ),
+        _ => format!(
             "[AGENT ONBOARDING — SIMPLY AGENT HUB]\n\
             1. Your identity: You are instance '{}' (CLI engine: '{}', working directory: '{}').\n\
             2. Your assigned role: '{}'.\n\
@@ -2326,7 +2359,7 @@ async fn onboard_instance_handler(
             - You can mention any collective agent with @AgentName.\n\
             Confirm in one concise sentence that you acknowledge your identity and role '{}'.",
             inst.name, inst.kind, inst.default_cwd, inst.role, base_role_prompt, channel_name, inst.role
-        )
+        ),
     };
 
     match ask_instance_model(&state, &inst, &onboarding_prompt, None, "auto").await {
@@ -2949,6 +2982,36 @@ mod tests {
                 .as_str()
                 .unwrap_or("")
                 .contains("[INITIALISATION D'AGENT — SIMPLY AGENT HUB]")
+        );
+
+        // 5. Verify German presets and onboarding
+        let de_resp = client
+            .get(format!("{}/api/roles/presets?lang=de", base_url))
+            .send()
+            .await
+            .unwrap_or_else(|e| panic!("de presets failed: {e}"));
+        assert_eq!(de_resp.status(), StatusCode::OK);
+        let de_presets: Vec<Value> = de_resp.json().await.unwrap_or_else(|e| panic!("de json failed: {e}"));
+        let de_arch = de_presets
+            .iter()
+            .find(|p| p["id"] == "architect")
+            .unwrap_or_else(|| panic!("missing de arch"));
+        assert!(de_arch["label"].as_str().unwrap_or("").contains("Software-Architekt"));
+        assert!(de_arch["prompt"].as_str().unwrap_or("").contains("Software-Architekt"));
+
+        let onboard_de_resp = client
+            .post(format!("{}/api/instances/{}/onboard", base_url, en_inst_id))
+            .json(&json!({ "channel_name": "entwickler-kanal", "lang": "de" }))
+            .send()
+            .await
+            .unwrap_or_else(|e| panic!("onboard de failed: {e}"));
+        assert_eq!(onboard_de_resp.status(), StatusCode::OK);
+        let onboard_de_json: Value = onboard_de_resp.json().await.unwrap_or_else(|e| panic!("json failed: {e}"));
+        assert!(
+            onboard_de_json["onboarding_prompt"]
+                .as_str()
+                .unwrap_or("")
+                .contains("[AGENTEN-ONBOARDING — SIMPLY AGENT HUB]")
         );
     }
 

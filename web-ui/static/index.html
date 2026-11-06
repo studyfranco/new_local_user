@@ -18,9 +18,10 @@
                     <h1>Simply Agent Hub</h1>
                 </div>
                 <div class="header-actions">
-                    <div class="lang-selector">
-                        <button id="lang-btn-en" class="btn-lang active" onclick="setAppLanguage('en')">EN</button>
-                        <button id="lang-btn-fr" class="btn-lang" onclick="setAppLanguage('fr')">FR</button>
+                    <div class="lang-selector" id="lang-selector" title="Language selection / Sprachauswahl">
+                        <button id="lang-btn-en" class="btn-lang" onclick="setAppLanguage('en')" title="Switch to English">EN</button>
+                        <button id="lang-btn-fr" class="btn-lang" onclick="setAppLanguage('fr')" title="Passer en Français">FR</button>
+                        <button id="lang-btn-de" class="btn-lang" onclick="setAppLanguage('de')" title="Auf Deutsch umstellen">DE</button>
                     </div>
                     <span id="header-instances-count" class="badge badge-tier">0 CLIs registered</span>
                     <span id="header-active-cli-badge" class="badge badge-online">No CLI selected</span>

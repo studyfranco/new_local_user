@@ -94,9 +94,9 @@ paths:
           name: lang
           schema:
             type: string
-            enum: [en, fr]
+            enum: [en, fr, de]
             default: en
-          description: Target language for role titles and instructions.
+          description: Target language for role titles and instructions (e.g. en, fr, de, or extensible custom language).
       responses:
         "200":
           description: Array of role presets
@@ -780,7 +780,7 @@ components:
           type: string
         lang:
           type: string
-          enum: [en, fr]
+          enum: [en, fr, de]
           default: en
 
     TerminalWsMessage:

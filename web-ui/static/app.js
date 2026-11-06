@@ -1,5 +1,5 @@
 (() => {
-    let currentLang = localStorage.getItem("agent_hub_lang") || "en";
+    let currentLang = "en";
 
     const I18N = {
         en: {
@@ -231,6 +231,121 @@
             onboardSuccess: (role) => `Rôle « ${role} » initialisé.`,
             participantsUpdated: "Participants du canal mis à jour en base SeaORM.",
             retentionApplied: (days, max, pruned) => `Politique appliquée (${days}j / max ${max} messages). Messages purgés: ${pruned}.`,
+        },
+        de: {
+            appTitle: "Simply Agent Hub",
+            registeredClis: (count, online) => `${count} CLIs (${online} online)`,
+            noCliSelected: "Kein CLI ausgewählt",
+            activeCliReady: "Bereit",
+            btnRefreshAll: "↻ Status aktualisieren",
+            tabConsole: "CLI-Konsole, Rollen & Natives Terminal",
+            tabOrchestration: "Multi-CLI Orchestrierungskanäle",
+            tabGit: "🔀 Git Diff & Commit",
+            tabInventory: "Container-Flotte (SeaORM)",
+            tabRpc: "JSON-RPC Inspektor",
+            cliSelectorTitle: "CLI-Container-Auswahl",
+            cliSelectorSubtitle: "Wählen, benennen, weisen Sie eine Rolle zu oder authentifizieren Sie eine Ihrer CLI-Instanzen.",
+            activeCliLabel: "Aktive CLI-Instanz",
+            btnAddCli: "+ CLI hinzufügen",
+            btnEditCli: "✎ Umbenennen / Bearbeiten",
+            btnAuthCli: "🔑 Authentifizieren",
+            agentRoleTitle: "🎭 Agentenrolle & Mission",
+            roleInCollectiveLabel: "Rolle im Kollektiv",
+            rolePromptLabel: "Rollen-Prompt (vorgeschlagen / anpassbar)",
+            btnSaveRole: "💾 Rolle speichern",
+            btnOnboardCli: "🎭 Agent initialisieren",
+            addCliFormTitle: "CLI-Container hinzufügen",
+            editCliFormTitle: (name) => `"${name}" umbenennen / bearbeiten`,
+            customNameLabel: "Benutzerdefinierter Name",
+            cliAgentTypeLabel: "CLI-Agententyp",
+            defaultRoleLabel: "Standardrolle",
+            bridgeUrlLabel: "Auth/Tmux Bridge-URL (optional)",
+            secretTokenLabel: "Geheimnis / Token (optional)",
+            workingDirLabel: "Arbeitsverzeichnis (cwd)",
+            btnSaveDatabase: "In Datenbank speichern",
+            btnCancel: "Abbrechen",
+            authPanelTitle: "Web-Authentifizierung des Containers",
+            authPanelSubtitle: "Authentifizieren Sie den ausgewählten Container direkt über dieses Dashboard.",
+            btnCheckStatus: "Status prüfen",
+            btnGetDeviceCode: "Device Code / OAuth-Link abrufen",
+            apiKeyInjectLabel: "Oder API-Schlüssel einfügen (OpenAI / Gemini / Anthropic)",
+            btnApplyKey: "Schlüssel anwenden",
+            oauthCallbackLabel: "Oder OAuth-Callback-URL validieren (http://localhost:...)",
+            btnValidateOauth: "OAuth validieren",
+            btnConnectCli: "Mit CLI verbinden",
+            btnNewSession: "+ Sitzung / Thread",
+            btnNativeTerminal: "🖥 Natives Terminal (Tmux/WS)",
+            btnCliWebServer: "🌐 CLI-Webserver",
+            sessionsThreadsTitle: "Sitzungen / Threads",
+            selectConnectHint: "Wählen und verbinden Sie eine CLI-Instanz",
+            btnInterrupt: "⏹ Unterbrechen",
+            btnClear: "Leeren",
+            termDrawerTitle: "🖥 Interaktives natives Terminal (Direktes Tmux WebSocket)",
+            btnClose: "✕ Schließen",
+            btnSendPty: "An PTY senden ➤",
+            approvalTitle: "Werkzeuggenehmigung vom CLI angefordert",
+            btnApprove: "Genehmigen",
+            btnDecline: "Ablehnen",
+            btnSend: "Senden ➤",
+            orchChannelsTitle: "Orchestrierungskanäle",
+            orchChannelsSubtitle: "Erstellen Sie einen geteilten Kanal, in dem mehrere CLI-Instanzen in Echtzeit zusammenarbeiten.",
+            activeChannelLabel: "Aktiver Kanal",
+            btnNewChannel: "+ Neuer Kanal",
+            btnDelete: "🗑 Löschen",
+            createChannelTitle: "Kanal erstellen",
+            channelNameLabel: "Kanalname",
+            descriptionLabel: "Beschreibung",
+            btnCreate: "Erstellen",
+            clisJoinedChannelTitle: "CLIs in diesem Kanal",
+            clisJoinedChannelHint: "Wählen Sie die Instanzen aus, die an diesem Kanal teilnehmen:",
+            btnSaveParticipants: "💾 Kanalteilnehmer speichern",
+            retentionTitle: "🧹 Konfigurierbare Aufbewahrung (SeaORM)",
+            retentionDaysLabel: "Aufbewahrung (Tage, 0 = unbegrenzt)",
+            maxMessagesLabel: "Max. Nachrichtenanzahl (0 = unbegrenzt)",
+            btnSaveRetention: "💾 Anwenden & Bereinigen",
+            btnExportMd: "📥 Export .md",
+            btnRefreshHistory: "↻ DB-Verlauf",
+            btnBroadcast: "Senden ➤",
+            gitStatusTitle: "🔀 Workspace Git-Status",
+            gitStatusSubtitle: "Überprüfen Sie Änderungen Ihrer CLI-Agenten, setzen Sie Dateien zurück oder erstellen Sie Commits.",
+            gitCwdLabel: "Git-Verzeichnis (cwd)",
+            btnAnalyze: "↻ Analysieren",
+            activeBranchLabel: "Aktiver Branch: ",
+            modifiedFilesTitle: "Geänderte Dateien",
+            createCommitTitle: "Commit erstellen",
+            commitMsgLabel: "Commit-Nachricht",
+            btnGitCommit: "✅ Alles stagen (git add -A) & Committen",
+            recentCommitsTitle: "Neueste Commits",
+            unifiedDiffTitle: "Unified Diff (`git diff HEAD`)",
+            btnRevertAll: "↩ Gesamten Workspace zurücksetzen",
+            inventoryTitle: "Registrierte CLI-Container-Flotte (SeaORM: SQLite / Postgres / MariaDB)",
+            inventorySubtitle: "Verwalten Sie alle in der Datenbank gespeicherten Codex-, Antigravity-, Claude- und Goose-Instanzen.",
+            btnNewCliContainer: "+ Neuer CLI-Container",
+            thInstanceName: "Instanzname",
+            thType: "Typ",
+            thRole: "Zugewiesene Rolle",
+            thTransport: "Transport",
+            thEndpoint: "Endpunkt",
+            thStatus: "Status",
+            thActions: "Aktionen",
+            rpcTitle: "JSON-RPC 2.0 Frame-Inspektor & Orchestrierungsbus",
+            rpcSubtitle: "Echtzeitprotokoll der mit CLI-Containern ausgetauschten Frames.",
+            btnClearLog: "Protokoll leeren",
+            onlineBadge: "Online",
+            offlineBadge: "Offline",
+            btnUse: "Verwenden",
+            btnRename: "✎ Umbenennen",
+            connectingTo: (name) => `Verbinde mit ${name}...`,
+            connectedTo: (name) => `Verbunden (${name} — Tmux PTY)`,
+            disconnected: "Getrennt",
+            tmuxSessionReady: "(Tmux-Sitzung bereit)",
+            cleanWorkingTree: "Sauberer Arbeitsbaum (0 geänderte Dateien)",
+            noDiffDetected: "Keine ungespeicherten Änderungen in diesem Repository.",
+            roleSaved: (role) => `Rolle "${role}" und Systemprompt in SeaORM-Datenbank gespeichert.`,
+            onboardingSent: (role, name) => `Sende Identität und Rollen-Prompt (${role}) an ${name}...`,
+            onboardSuccess: (role) => `Rolle "${role}" initialisiert.`,
+            participantsUpdated: "Kanalteilnehmer in SeaORM-Datenbank aktualisiert.",
+            retentionApplied: (days, max, pruned) => `Aufbewahrung angewendet (${days} Tage / max. ${max} Nachrichten). Bereinigt: ${pruned}.`,
         }
     };
 
@@ -1641,13 +1756,59 @@
 
     $("btn-clear-rpc").addEventListener("click", () => ($("rpc-log").innerHTML = ""));
 
+    function detectBrowserLanguage() {
+        const saved = localStorage.getItem("agent_hub_lang");
+        if (saved && I18N[saved]) {
+            return saved;
+        }
+        const candidates = (navigator.languages && navigator.languages.length)
+            ? navigator.languages
+            : [navigator.language || "en"];
+        for (const cand of candidates) {
+            if (!cand) continue;
+            const short = String(cand).toLowerCase().split(/[-_]/)[0];
+            if (I18N[short]) {
+                return short;
+            }
+        }
+        return "en";
+    }
+
+    function renderLanguageSwitcher() {
+        const container = document.querySelector(".lang-selector");
+        if (!container) return;
+        container.innerHTML = "";
+        Object.keys(I18N).forEach((langCode) => {
+            const btn = document.createElement("button");
+            btn.id = `lang-btn-${langCode}`;
+            btn.className = `btn-lang ${langCode === currentLang ? "active" : ""}`;
+            btn.textContent = langCode.toUpperCase();
+            btn.title = `Switch to ${langCode.toUpperCase()}`;
+            btn.addEventListener("click", () => window.setAppLanguage(langCode));
+            container.appendChild(btn);
+        });
+    }
+
+    window.detectBrowserLanguage = detectBrowserLanguage;
+    window.renderLanguageSwitcher = renderLanguageSwitcher;
+    window.I18N = I18N;
+
+    window.registerLanguagePack = function (code, dictionary) {
+        if (!code || typeof code !== "string" || !dictionary) return;
+        const short = code.toLowerCase().trim();
+        I18N[short] = { ...(I18N.en || {}), ...dictionary };
+        renderLanguageSwitcher();
+    };
+
     window.setAppLanguage = function (lang) {
-        currentLang = lang === "fr" ? "fr" : "en";
+        const normalized = String(lang || "").toLowerCase().trim();
+        currentLang = I18N[normalized] ? normalized : "en";
         localStorage.setItem("agent_hub_lang", currentLang);
         document.documentElement.lang = currentLang;
 
-        $("lang-btn-en")?.classList.toggle("active", currentLang === "en");
-        $("lang-btn-fr")?.classList.toggle("active", currentLang === "fr");
+        document.querySelectorAll(".btn-lang").forEach((btn) => {
+            btn.classList.toggle("active", btn.id === `lang-btn-${currentLang}`);
+        });
 
         document.querySelectorAll("[data-i18n]").forEach((el) => {
             const k = el.getAttribute("data-i18n");
@@ -1662,7 +1823,10 @@
     window.state = state;
 
     // Init
+    currentLang = detectBrowserLanguage();
+    renderLanguageSwitcher();
     window.setAppLanguage(currentLang);
+
     loadRolePresets()
         .then(loadInstances)
         .then(loadChannels);

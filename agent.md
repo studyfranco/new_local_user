@@ -84,10 +84,11 @@ Because `Simply Agent Hub` shares lineage with the `simply_` family:
     - Base backgrounds: `#161b24`, `#1e2430`, `#232a36`.
     - Accent & Borders: Cyan `#3daee9`, highlight `#2ecc71`, danger `#e74c3c`.
     - Typography: System sans-serif with `JetBrains Mono` / `Consolas` monospaced fonts for terminal, code, and diffs.
-- **Internationalization (i18n)**:
-  - Default language is **English** (`en`).
-  - All translatable keys must exist symmetrically in both `en` and `fr` within `I18N = { en: {...}, fr: {...} }` in `static/app.js`.
-  - Dynamic switching via `window.setAppLanguage('en' | 'fr')`.
+- **Internationalization (i18n) & Extensible Language Packs**:
+  - Default language is **English** (`en`), with out-of-the-box **German** (`de`) and **French** (`fr`) support.
+  - Automatic browser language detection via `detectBrowserLanguage()` (`navigator.languages` / `navigator.language`), overridable at will by the user with persistence in `localStorage`.
+  - Extensible runtime language pack registration via `window.registerLanguagePack(code, dictionary)`.
+  - Dynamic switching at will via `window.setAppLanguage('en' | 'fr' | 'de' | ...)` with immediate DOM translation.
 - **ECMAScript Syntax Verification**:
   - All JavaScript changes are statically parsed and validated via the `oxc_parser` test in `web-ui/tests/frontend_syntax_test.rs`.
 
