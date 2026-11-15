@@ -3,7 +3,7 @@ FROM rust:slim AS builder
 
 WORKDIR /app
 
-COPY web-ui/Cargo.toml web-ui/Cargo.lock ./
+COPY web-ui/Cargo.toml ./
 COPY web-ui/src src
 COPY web-ui/static static
 
